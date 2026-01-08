@@ -10,7 +10,12 @@ const CONFIG = {
     youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UCyDXAG7yWP9SJGpXUDfBuCg"
 };
 
-app.use(cors());
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST');
+    next();
+});
 app.use(express.static(__dirname));
 
 let youtubeChat = null;
@@ -19,18 +24,18 @@ const clients = [];
 async function connectYouTube() {
     try {
         console.log('🎯 Conectando ao YouTube...');
-        
+
         if (youtubeChat) {
             youtubeChat.stop();
         }
-        
-        youtubeChat = new LiveChat({ 
-            channelId: CONFIG.youtubeChannelId 
+
+        youtubeChat = new LiveChat({
+            channelId: CONFIG.youtubeChannelId
         });
-        
+
         youtubeChat.on('chat', (data) => {
             console.log(`📨 ${data.author.name}: ${data.message[0]?.text || ''}`);
-            
+
             broadcast({
                 type: 'youtube',
                 data: {
@@ -45,18 +50,18 @@ async function connectYouTube() {
                 }
             });
         });
-        
+
         youtubeChat.on('start', () => {
             console.log('✅ YouTube Chat conectado!');
             broadcast({ type: 'system', data: 'YouTube: Conectado!' });
         });
-        
+
         youtubeChat.on('error', (error) => {
             console.error('❌ Erro YouTube:', error.message);
         });
-        
+
         await youtubeChat.start();
-        
+
     } catch (error) {
         console.error('💥 Erro conexão:', error.message);
         setTimeout(connectYouTube, 10000);
@@ -70,14 +75,14 @@ app.get('/events', (req, res) => {
         'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*'
     });
-    
+
     clients.push(res);
-    
+
     res.write(`data: ${JSON.stringify({
         type: 'welcome',
         data: { message: 'Conectado ao servidor Render' }
     })}\n\n`);
-    
+
     req.on('close', () => {
         const index = clients.indexOf(res);
         if (index > -1) clients.splice(index, 1);
@@ -107,14 +112,14 @@ const CONFIG = {
 };
 console.log('⚙️ Config Render:', CONFIG);
     `;
-    
+
     res.header('Content-Type', 'application/javascript');
     res.send(config);
 });
 
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'healthy', 
+    res.json({
+        status: 'healthy',
         youtube: !!youtubeChat,
         clients: clients.length,
         timestamp: new Date().toISOString()
@@ -127,6 +132,6 @@ app.listen(PORT, async () => {
     console.log(`📺 Twitch: ${CONFIG.twitchChannel}`);
     console.log(`🎥 YouTube: ${CONFIG.youtubeChannelId}`);
     console.log('='.repeat(50));
-    
+
     await connectYouTube();
 });
