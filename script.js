@@ -1,3 +1,40 @@
+let APP_CONFIG, TWITCH_CONFIG, YOUTUBE_CONFIG;
+
+function loadConfig() {
+    if (window.APP_CONFIG) {
+        APP_CONFIG = window.APP_CONFIG;
+    } else {
+        APP_CONFIG = {
+            maxMessages: 200,
+            updateInterval: 60000,
+            enableSimulation: true
+        };
+    }
+
+    if (window.TWITCH_CONFIG) {
+        TWITCH_CONFIG = window.TWITCH_CONFIG;
+    } else {
+        TWITCH_CONFIG = {
+            channel: "funilzinha"
+        };
+    }
+
+    if (window.YOUTUBE_CONFIG) {
+        YOUTUBE_CONFIG = window.YOUTUBE_CONFIG;
+    } else {
+        YOUTUBE_CONFIG = {
+            channelId: "",
+            apiKey: ""
+        };
+    }
+
+    console.log('Configurações carregadas:', {
+        twitchChannel: TWITCH_CONFIG.channel,
+        youtubeConfigured: !!YOUTUBE_CONFIG.apiKey,
+        simulation: APP_CONFIG.enableSimulation
+    });
+}
+
 let currentYouTubeLiveId = null;
 let youtubeCheckInterval = null;
 let twitchSocket = null;
@@ -215,7 +252,7 @@ async function checkYouTubeLive() {
                 currentYouTubeLiveId = liveVideoId;
                 await startYouTubeChat(liveVideoId);
                 updateStatus('youtube', 'online');
-                quotaErrorCount = 0; 
+                quotaErrorCount = 0;
             }
         } else {
             console.log('📴 Nenhuma transmissão ao vivo encontrada');
@@ -223,7 +260,7 @@ async function checkYouTubeLive() {
 
             if (APP_CONFIG.enableSimulation) {
                 startYouTubeSimulation();
-                updateStatus('youtube', 'online'); 
+                updateStatus('youtube', 'online');
             }
         }
 
