@@ -1,14 +1,10 @@
-const TWITCH_CONFIG = {
-    channel: "funilzinha",
+const CONFIG = {
+    twitchChannel: "funilzinha",
+    serverUrl: "http://localhost:3000", 
+    youtubeChannelId: "UCyDXAG7yWP9SJGpXUDfBuCg"
 };
 
-const YOUTUBE_CONFIG = {
-    channelId: "", 
-    apiKey: ""
-};
-
-const APP_CONFIG = {
-    maxMessages: 200, 
-    updateInterval: 60000,
-    enableSimulation: true 
-};
+console.log('⚙️ Config carregada:');
+console.log('- Twitch:', CONFIG.twitchChannel);
+console.log('- YouTube:', CONFIG.youtubeChannelId);
+console.log('- Servidor:', CONFIG.serverUrl);

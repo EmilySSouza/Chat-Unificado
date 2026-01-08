@@ -1,21 +1,4 @@
-# Chaves e senhas
-config.js      # AQUI SIM! Ignoramos o config.js real
-.env
-*.key
-*.pem
-
-# Dependências do Node
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editor e IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Sistema
+.env
 .DS_Store
-Thumbs.db
+*.log

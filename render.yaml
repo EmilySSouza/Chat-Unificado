@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: chat-obs
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: TWITCH_CHANNEL
+        value: funilzinha
+      - key: YOUTUBE_CHANNEL_ID
+        value: UCyDXAG7yWP9SJGpXUDfBuCg
