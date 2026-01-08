@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Twitch & YouTube - OBS</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Chat Ao Vivo</h1>
+            <div class="status-indicators">
+                <div class="status twitch-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Twitch: Offline</span>
+                </div>
+                <div class="status youtube-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">YouTube: Offline</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-box" id="combined-chat">
+                <div class="messages" id="combined-messages"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
