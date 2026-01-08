@@ -104,10 +104,14 @@ app.get('/', (req, res) => {
 });
 
 app.get('/config.js', (req, res) => {
+    // Usa o protocolo correto baseado na requisição
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+
     const config = `
 const CONFIG = {
     twitchChannel: "${CONFIG.twitchChannel}",
-    serverUrl: "${req.protocol}://${req.get('host')}",
+    serverUrl: "${protocol}://${host}",
     youtubeChannelId: "${CONFIG.youtubeChannelId}"
 };
 console.log('⚙️ Config Render:', CONFIG);
