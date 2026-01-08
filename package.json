@@ -2,7 +2,7 @@
   "name": "twitch-youtube-chat",
   "version": "1.0.0",
   "description": "Chat combinado Twitch + YouTube",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
