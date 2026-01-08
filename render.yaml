@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: chat-unificado
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: TWITCH_CHANNEL
+        value: funilzinha
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://chat-unificado.onrender.com/auth/youtube/callback

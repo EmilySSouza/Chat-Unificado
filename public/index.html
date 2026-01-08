@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Unificado - Twitch + YouTube</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: transparent;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: white;
+            overflow: hidden;
+            height: 100vh;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        
+        #chat-container {
+            width: 100%;
+            height: 100vh;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+        
+        .message {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 10px;
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(5px);
+            border-left: 4px solid;
+            animation: slideIn 0.3s ease;
+            font-size: 16px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .username {
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .twitch { border-left-color: #9146FF; }
+        .youtube { border-left-color: #FF0000; }
+        
+        .platform-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 8px;
+            text-transform: uppercase;
+        }
+        
+        .twitch-badge { background: #9146FF; }
+        .youtube-badge { background: #FF0000; }
+        
+        .badge {
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        
+        .timestamp {
+            float: right;
+            opacity: 0.7;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+        
+        .message-content {
+            display: inline;
+        }
+        
+        /* Animações */
+        .new-message {
+            animation: highlight 1s ease;
+        }
+        
+        @keyframes highlight {
+            0% { background: rgba(145, 70, 255, 0.3); }
+            100% { background: rgba(20, 20, 30, 0.85); }
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container"></div>
+    
+    <script>
+        // Configurações
+        const chatContainer = document.getElementById('chat-container');
+        const maxMessages = 50;
+        const messageHistory = [];
+        
+        // Conectar ao WebSocket
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}`;
+        const ws = new WebSocket(wsUrl);
+        
+        // Emojis para badges
+        const badgeEmojis = {
+            broadcaster: '⭐',
+            moderator: '🛡️',
+            vip: '💎',
+            subscriber: '❤️',
+            premium: '👑',
+            founder: '🚀'
+        };
+        
+        // Quando receber mensagem
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'history') {
+                    // Limpar chat antes de carregar histórico
+                    chatContainer.innerHTML = '';
+                    data.data.forEach(msg => {
+                        messageHistory.push(msg);
+                        renderMessage(msg);
+                    });
+                } else if (data.type === 'message') {
+                    messageHistory.push(data.data);
+                    renderMessage(data.data);
+                    
+                    // Manter limite de mensagens visíveis
+                    while (messageHistory.length > maxMessages) {
+                        messageHistory.shift();
+                        if (chatContainer.firstChild) {
+                            chatContainer.removeChild(chatContainer.firstChild);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao processar mensagem:', error);
+            }
+        };
+        
+        // Reconexão automática
+        ws.onclose = () => {
+            console.log('🔄 Reconectando...');
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        };
+        
+        ws.onerror = (error) => {
+            console.error('❌ Erro WebSocket:', error);
+        };
+        
+        // Renderizar mensagem no chat
+        function renderMessage(msg) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${msg.platform} new-message`;
+            
+            // Gerar badges
+            let badgesHTML = '';
+            if (msg.badges) {
+                Object.keys(msg.badges).forEach(badge => {
+                    if (badgeEmojis[badge]) {
+                        badgesHTML += `<span class="badge">${badgeEmojis[badge]}</span>`;
+                    }
+                });
+            }
+            
+            // Formatar mensagem
+            const formattedMessage = formatMessage(msg.message);
+            
+            messageElement.innerHTML = `
+                <div>
+                    <span class="platform-badge ${msg.platform}-badge">
+                        ${msg.platform === 'twitch' ? 'TW' : 'YT'}
+                    </span>
+                    ${badgesHTML}
+                    <span class="username" style="color: ${msg.color || '#FFFFFF'}">
+                        ${escapeHtml(msg.username)}:
+                    </span>
+                    <span class="message-content">${formattedMessage}</span>
+                    <span class="timestamp">${msg.timestamp}</span>
+                </div>
+            `;
+            
+            chatContainer.appendChild(messageElement);
+            
+            // Rolagem automática
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            // Remover classe de animação após 1 segundo
+            setTimeout(() => {
+                messageElement.classList.remove('new-message');
+            }, 1000);
+        }
+        
+        // Formatar mensagem (emojis, links, etc.)
+        function formatMessage(text) {
+            let formatted = escapeHtml(text);
+            
+            // Emojis simples (pode expandir)
+            const emojiMap = {
+                ':)': '😊',
+                ':(': '😢',
+                ':D': '😁',
+                ';)': '😉',
+                ':P': '😛',
+                '<3': '❤️',
+                ':/': '😕',
+                ':O': '😮'
+            };
+            
+            Object.keys(emojiMap).forEach(emoji => {
+                formatted = formatted.replace(new RegExp(emoji.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), emojiMap[emoji]);
+            });
+            
+            return formatted;
+        }
+        
+        // Segurança: escapar HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Mostrar status de conexão
+        window.addEventListener('load', () => {
+            const status = document.createElement('div');
+            status.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                background: rgba(0,0,0,0.7);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 5px;
+                font-size: 12px;
+                z-index: 1000;
+            `;
+            status.id = 'connection-status';
+            document.body.appendChild(status);
+            
+            ws.onopen = () => {
+                document.getElementById('connection-status').textContent = '✅ Conectado';
+                setTimeout(() => {
+                    document.getElementById('connection-status').style.display = 'none';
+                }, 3000);
+            };
+        });
+    </script>
+</body>
+</html>
