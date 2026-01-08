@@ -188,7 +188,7 @@ function connectTwitch() {
 
 window.testServer = async function() {
     try {
-        const response = await fetch('http://localhost:3000/test');
+        const response = await fetch('https://chat-unificado.onrender.com/test');
         const data = await response.json();
         console.log('✅ Teste enviado:', data);
         addMessage('system', 'Sistema', 'Teste enviado ao servidor');
