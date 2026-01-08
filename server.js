@@ -7,64 +7,62 @@ const PORT = process.env.PORT || 3000;
 // Servir arquivos estáticos
 app.use(express.static(__dirname));
 
-// Middleware para processar index.html e injetar variáveis
+// Rota principal - serve o index.html
 app.get('/', (req, res) => {
-    let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-
-    // Injetar configurações como script global
-    const configScript = `
-        <script>
-            window.APP_CONFIG = ${JSON.stringify({
-        maxMessages: process.env.MAX_MESSAGES || 200,
-        updateInterval: process.env.UPDATE_INTERVAL || 60000,
-        enableSimulation: process.env.ENABLE_SIMULATION !== 'false'
-    })};
-            
-            window.TWITCH_CONFIG = ${JSON.stringify({
-        channel: process.env.TWITCH_CHANNEL || "funilzinha"
-    })};
-            
-            window.YOUTUBE_CONFIG = ${JSON.stringify({
-        channelId: process.env.YOUTUBE_CHANNEL_ID || "",
-        apiKey: process.env.YOUTUBE_API_KEY || ""
-    })};
-        </script>
-    `;
-
-    // Injetar antes do fechamento do </head>
-    html = html.replace('</head>', configScript + '</head>');
-
-    res.send(html);
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Rota para config.js (retorna configurações dinâmicas)
+// Rota ESPECIAL para config.js dinâmico
 app.get('/config.js', (req, res) => {
-    const config = `
-        const TWITCH_CONFIG = ${JSON.stringify({
-        channel: process.env.TWITCH_CHANNEL || "funilzinha"
-    })};
+    console.log('📋 Servindo config.js com variáveis de ambiente:');
+    console.log('- YOUTUBE_API_KEY:', process.env.YOUTUBE_API_KEY ? '✔️ Configurada' : '❌ Não configurada');
+    console.log('- TWITCH_CHANNEL:', process.env.TWITCH_CHANNEL || 'funilzinha');
 
-        const YOUTUBE_CONFIG = ${JSON.stringify({
-        channelId: process.env.YOUTUBE_CHANNEL_ID || "",
-        apiKey: process.env.YOUTUBE_API_KEY || ""
-    })};
+    const configContent = `
+// Configurações dinâmicas do servidor
+const TWITCH_CONFIG = {
+    channel: "${process.env.TWITCH_CHANNEL || 'funilzinha'}"
+};
 
-        const APP_CONFIG = ${JSON.stringify({
-        maxMessages: process.env.MAX_MESSAGES || 200,
-        updateInterval: process.env.UPDATE_INTERVAL || 60000,
-        enableSimulation: process.env.ENABLE_SIMULATION !== 'false'
-    })};
+const YOUTUBE_CONFIG = {
+    channelId: "${process.env.YOUTUBE_CHANNEL_ID || ''}",
+    apiKey: "${process.env.YOUTUBE_API_KEY || ''}"
+};
+
+const APP_CONFIG = {
+    maxMessages: ${process.env.MAX_MESSAGES || 200},
+    updateInterval: ${process.env.UPDATE_INTERVAL || 60000},
+    enableSimulation: ${process.env.ENABLE_SIMULATION !== 'false'}
+};
+
+console.log('✅ Configurações carregadas:');
+console.log('- Canal Twitch:', TWITCH_CONFIG.channel);
+console.log('- YouTube API Key:', YOUTUBE_CONFIG.apiKey ? '✔️ Configurada' : '❌ Não configurada');
     `;
 
     res.setHeader('Content-Type', 'application/javascript');
-    res.send(config);
+    res.send(configContent);
+});
+
+// Rota para verificar variáveis de ambiente (apenas para debug)
+app.get('/debug-env', (req, res) => {
+    res.json({
+        youtube_api_key: process.env.YOUTUBE_API_KEY ? 'Configurada' : 'Não configurada',
+        youtube_channel_id: process.env.YOUTUBE_CHANNEL_ID || 'Não configurada',
+        twitch_channel: process.env.TWITCH_CHANNEL || 'funilzinha',
+        max_messages: process.env.MAX_MESSAGES || 200,
+        update_interval: process.env.UPDATE_INTERVAL || 60000,
+        enable_simulation: process.env.ENABLE_SIMULATION || true
+    });
 });
 
 // Iniciar servidor
 app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
-    console.log(`Acesse: http://localhost:${PORT}`);
-    console.log('Configurações carregadas:');
-    console.log('- Twitch Channel:', process.env.TWITCH_CHANNEL || "funilzinha");
-    console.log('- YouTube API Key:', process.env.YOUTUBE_API_KEY ? "Configurada" : "Não configurada");
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`🌐 Acesse: http://localhost:${PORT}`);
+    console.log('📊 Variáveis de ambiente detectadas:');
+    console.log('- PORT:', PORT);
+    console.log('- YOUTUBE_API_KEY:', process.env.YOUTUBE_API_KEY ? '✅ Configurada' : '❌ Não configurada');
+    console.log('- YOUTUBE_CHANNEL_ID:', process.env.YOUTUBE_CHANNEL_ID || 'Não configurada');
+    console.log('- TWITCH_CHANNEL:', process.env.TWITCH_CHANNEL || 'funilzinha (padrão)');
 });
