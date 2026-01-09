@@ -64,33 +64,47 @@ body {
     transition: all 0.3s ease;
 }
 
-.status-dot.online { 
+.status-dot.online {
     background: #00ff00;
     box-shadow: 0 0 10px #00ff00;
 }
 
-.status-dot.offline { 
+.status-dot.offline {
     background: #ff3333;
 }
 
-.status-dot.connecting { 
+.status-dot.connecting {
     background: #ffa500;
     animation: pulse 1.5s infinite;
 }
 
-.status-dot.error { 
+.status-dot.error {
     background: #ff0000;
     animation: blink 1s infinite;
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
 }
 
 @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
 }
 
 .chat-container {
@@ -138,8 +152,13 @@ body {
     font-size: 20px;
 }
 
-#twitch-chat .chat-header::before { color: #9146ff; }
-#youtube-chat .chat-header::before { color: #ff0000; }
+#twitch-chat .chat-header::before {
+    color: #9146ff;
+}
+
+#youtube-chat .chat-header::before {
+    color: #ff0000;
+}
 
 .messages {
     flex: 1;
@@ -196,13 +215,14 @@ body {
 }
 
 @keyframes fadeIn {
-    from { 
-        opacity: 0; 
-        transform: translateY(10px) scale(0.95); 
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.95);
     }
-    to { 
-        opacity: 1; 
-        transform: translateY(0) scale(1); 
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
     }
 }
 
@@ -320,7 +340,7 @@ button:active {
         height: auto;
         min-height: 400px;
     }
-    
+
     .chat-box {
         height: 100%;
     }
@@ -332,16 +352,16 @@ button:active {
         gap: 15px;
         text-align: center;
     }
-    
+
     .status-indicators {
         width: 100%;
         justify-content: center;
     }
-    
+
     .controls {
         flex-direction: column;
     }
-    
+
     button {
         width: 100%;
         justify-content: center;
@@ -392,4 +412,48 @@ button:active {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+
+.badge {
+    display: inline-block;
+    margin-right: 3px;
+    font-size: 0.9em;
+    vertical-align: middle;
+}
+
+.badge.broadcaster {
+    color: #9146FF;
+    background: rgba(145, 70, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.mod {
+    color: #00AD03;
+    background: rgba(0, 173, 3, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.vip {
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.subscriber {
+    color: #BF94FF;
+    background: rgba(191, 148, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+/* Para badges com imagens */
+.badge-icon {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+    margin-right: 3px;
 }

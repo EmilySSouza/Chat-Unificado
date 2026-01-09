@@ -30,77 +30,88 @@ function escapeHtml(text) {
 
 function addMessage(platform, user, text, badges = {}) {
     const container = document.getElementById('combined-messages');
-    if (!container) {
-        console.error('❌ Container não encontrado!');
-        return;
-    }
-    
-    // Limita mensagens
+    if (!container) return;
+
+    // Limita mensagens (código existente)
     if (container.children.length >= 200) {
         container.removeChild(container.firstChild);
     }
-    
-    // Cria badges HTML
+
+    // Cria badges HTML com base na plataforma
     let badgesHtml = '';
-    if (badges.isOwner) badgesHtml += '<span class="badge owner">👑</span>';
-    if (badges.isModerator) badgesHtml += '<span class="badge mod">🛡️</span>';
-    if (badges.isMember) badgesHtml += '<span class="badge member">⭐</span>';
-    
+
+    if (platform === 'twitch') {
+        // Badges específicas da Twitch
+        if (badges.isBroadcaster) badgesHtml += '<span class="badge broadcaster" title="Broadcaster">👑</span>';
+        if (badges.isModerator) badgesHtml += '<span class="badge mod" title="Moderator">🛡️</span>';
+        if (badges.isVIP) badgesHtml += '<span class="badge vip" title="VIP">⭐</span>';
+        if (badges.isSubscriber || badges.isFounder) {
+            badgesHtml += '<span class="badge subscriber" title="Subscriber">💜</span>';
+        }
+
+        // Se quiser usar imagens oficiais:
+        // badgesHtml += '<img src="https://static-cdn.jtvnw.net/badges/v1/.../1.0" class="badge-icon">';
+
+    } else if (platform === 'youtube') {
+        // Seu código atual do YouTube
+        if (badges.isOwner) badgesHtml += '<span class="badge owner">👑</span>';
+        if (badges.isModerator) badgesHtml += '<span class="badge mod">🛡️</span>';
+        if (badges.isMember) badgesHtml += '<span class="badge member">⭐</span>';
+    }
+
     const msgEl = document.createElement('div');
     msgEl.className = `message ${platform}-message`;
     msgEl.innerHTML = `
         <div class="message-header">
             <span class="message-user">${user} ${badgesHtml}</span>
-            <span class="message-time">${new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>
+            <span class="message-time">${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
         <div class="message-content">${escapeHtml(text)}</div>
     `;
-    
+
     container.appendChild(msgEl);
     container.scrollTop = container.scrollHeight;
-    
-    console.log(`💬 ${platform.toUpperCase()}: ${user}: ${text}`);
 }
 
 // ==================== CONEXÃO SERVIDOR ====================
 
 function connectToServer() {
     console.log('🔗 Conectando ao servidor...');
-    
+
     // Fecha conexão anterior se existir
     if (eventSource) {
         eventSource.close();
         eventSource = null;
     }
-    
+
     // Cria nova conexão
     eventSource = new EventSource(`${CONFIG.serverUrl}/events`);
-    
+
     eventSource.onopen = () => {
         console.log('✅ Conectado ao servidor!');
         reconnectAttempts = 0;
         addMessage('system', 'Sistema', 'Servidor conectado');
     };
-    
+
     eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
             console.log('📩 Evento recebido:', data.type);
-            
+
             switch (data.type) {
                 case 'youtube':
                     addMessage(
-                        'youtube', 
-                        data.data.user, 
+                        'youtube',
+                        data.data.user,
                         data.data.message,
                         data.data.badges
                     );
                     break;
-                    
+
                 case 'system':
                     addMessage('system', 'Sistema', data.data);
                     break;
-                    
+
                 case 'welcome':
                     console.log('Mensagem de boas-vindas:', data.data);
                     break;
@@ -109,17 +120,17 @@ function connectToServer() {
             console.error('❌ Erro ao processar evento:', error);
         }
     };
-    
+
     eventSource.onerror = (error) => {
         console.error('❌ Erro na conexão:', error);
         if (eventSource) {
             eventSource.close();
         }
-        
+
         reconnectAttempts++;
         const delay = Math.min(5000, reconnectAttempts * 1000);
-        
-        console.log(`🔄 Reconectando em ${delay/1000}s...`);
+
+        console.log(`🔄 Reconectando em ${delay / 1000}s...`);
         setTimeout(connectToServer, delay);
     };
 }
@@ -128,14 +139,14 @@ function connectToServer() {
 
 function connectTwitch() {
     console.log('🎮 Conectando Twitch...');
-    
+
     // Fecha conexão anterior
     if (twitchSocket && twitchSocket.readyState === WebSocket.OPEN) {
         twitchSocket.close();
     }
-    
+
     twitchSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-    
+
     twitchSocket.onopen = () => {
         console.log('✅ Twitch conectado!');
         twitchSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
@@ -143,42 +154,64 @@ function connectTwitch() {
         twitchSocket.send(`JOIN #${CONFIG.twitchChannel.toLowerCase()}`);
         addMessage('system', 'Sistema', 'Twitch conectado');
     };
-    
+
     twitchSocket.onmessage = (event) => {
         const msg = event.data;
-        
+
         if (msg.includes('PING')) {
             twitchSocket.send('PONG :tmi.twitch.tv');
             return;
         }
-        
+
         if (msg.includes('PRIVMSG')) {
             try {
+                // Processa tags IRC (elas vêm no início da mensagem)
                 const parts = msg.split(';');
                 const tags = {};
                 parts.forEach(part => {
                     const [key, ...value] = part.split('=');
                     if (key) tags[key] = value.join('=');
                 });
-                
+
+                // Extrai username e mensagem
                 const match = msg.match(/:(.*)!(.*) PRIVMSG #(.*) :(.*)/);
                 if (match) {
                     const username = tags['display-name'] || match[1];
                     const message = match[4];
-                    
-                    addMessage('twitch', username, message);
+
+                    // Processa badges da Twitch
+                    const twitchBadges = {};
+                    if (tags.badges) {
+                        const badgesList = tags.badges.split(',');
+                        badgesList.forEach(badge => {
+                            const [name, version] = badge.split('/');
+                            twitchBadges[name] = version;
+                        });
+                    }
+
+                    // Determina tipo de usuário
+                    const userBadges = {
+                        isBroadcaster: tags['badges']?.includes('broadcaster') || tags['user-id'] === tags['room-id'],
+                        isModerator: tags.mod === '1' || tags['badges']?.includes('moderator'),
+                        isVIP: tags['badges']?.includes('vip'),
+                        isSubscriber: tags.subscriber === '1',
+                        isFounder: tags['badges']?.includes('founder'),
+                        badgeInfo: tags['badge-info'] // Tempo de sub
+                    };
+
+                    addMessage('twitch', username, message, userBadges);
                 }
             } catch (error) {
                 console.log('Erro Twitch:', error);
             }
         }
     };
-    
+
     twitchSocket.onclose = () => {
         console.log('🔄 Reconectando Twitch...');
         setTimeout(connectTwitch, 5000);
     };
-    
+
     twitchSocket.onerror = (error) => {
         console.error('❌ Erro Twitch:', error);
     };
@@ -186,7 +219,7 @@ function connectTwitch() {
 
 // ==================== FUNÇÕES GLOBAIS ====================
 
-window.testServer = async function() {
+window.testServer = async function () {
     try {
         const response = await fetch('https://chat-unificado.onrender.com/test');
         const data = await response.json();
@@ -198,7 +231,7 @@ window.testServer = async function() {
     }
 };
 
-window.clearChat = function() {
+window.clearChat = function () {
     const container = document.getElementById('combined-messages');
     if (container) {
         container.innerHTML = '';
@@ -208,19 +241,19 @@ window.clearChat = function() {
 
 // ==================== INICIALIZAÇÃO ====================
 
-window.onload = function() {
+window.onload = function () {
     console.log('🚀 Chat OBS - Iniciando...');
     console.log('⚙️ Config:', CONFIG);
-    
+
     // Mensagem inicial
     addMessage('system', 'Sistema', '💬 Chat OBS iniciado');
     addMessage('system', 'Sistema', `📺 Twitch: ${CONFIG.twitchChannel}`);
     addMessage('system', 'Sistema', '🎥 YouTube: Conectando...');
-    
+
     // Conecta aos serviços
     connectToServer();
     connectTwitch();
-    
+
     console.log('✅ Sistema pronto!');
 };
 
@@ -232,7 +265,7 @@ setInterval(() => {
         console.log('🔄 Reconectando EventSource...');
         connectToServer();
     }
-    
+
     if (twitchSocket && twitchSocket.readyState === WebSocket.CLOSED) {
         console.log('🔄 Reconectando Twitch...');
         connectTwitch();
