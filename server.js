@@ -4,19 +4,40 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// YouTube API Configuration
+// YouTube API Configuration - ESSENCIAL!
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 const YOUTUBE_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || 'UC5ooSCrMhz10WUWrc6IlT3Q';
 
-// Configurações de otimização
+// CONTADOR DE QUOTA - para monitorar uso
+let quotaUsage = {
+    today: new Date().toISOString().split('T')[0],
+    unitsUsed: 0,
+    lastReset: Date.now()
+};
+
+// Configurações OTIMIZADAS para quota gratuita
 const CONFIG = {
-    // Otimizações para economizar quota
-    CHECK_LIVE_INTERVAL: 60000, // 1 minuto (em vez de 30s)
-    MIN_POLLING_INTERVAL: 5000, // 5 segundos mínimo
-    MAX_POLLING_INTERVAL: 30000, // 30 segundos máximo
-    MAX_MESSAGES_PER_POLL: 50, // Limitar mensagens por poll
-    CACHE_DURATION: 30000, // 30 segundos de cache
-    
+    // YouTube API Quota Costs (aproximado)
+    QUOTA_COSTS: {
+        search: 100,     // search.list
+        videos: 1,       // videos.list
+        liveChat: 5,     // liveChatMessages.list (mínimo)
+        channels: 1      // channels.list
+    },
+
+    // Limites DIÁRIOS (gratuito: 10,000 unidades)
+    DAILY_QUOTA_LIMIT: 8000, // Deixamos 20% de margem
+
+    // Polling OTIMIZADO
+    CHECK_LIVE_INTERVAL: 300000, // 5 MINUTOS (em vez de 1)
+    MIN_POLLING_INTERVAL: 10000, // 10 segundos mínimo
+    MAX_POLLING_INTERVAL: 60000, // 60 segundos máximo
+
+    // Otimizações
+    MAX_MESSAGES_PER_POLL: 20,    // Reduzido de 50 para 20
+    ENABLE_CACHE: true,
+    CACHE_DURATION: 60000,        // 1 minuto
+
     // Twitch
     TWITCH_CHANNEL: process.env.TWITCH_CHANNEL || 'funilzinha'
 };
@@ -26,11 +47,11 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    
+
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
     }
-    
+
     next();
 });
 
@@ -42,60 +63,72 @@ let currentLiveChatId = null;
 let lastChatMessageIds = new Set();
 const clients = [];
 
-// Cache para reduzir chamadas à API
-const cache = {
-    videoInfo: null,
-    lastChecked: 0,
-    messages: [],
-    liveChatId: null,
-    lastLiveCheck: 0
-};
-
 // Sistema de polling
 let pollingInterval = null;
-let currentPollingDelay = 10000; // Começa com 10 segundos
+let currentPollingDelay = 15000; // Começa com 15 segundos
 let isCheckingLive = false;
+let lastLiveCheckTime = 0;
 
-// Verificar horário para otimização
-function shouldCheckForLive() {
-    const now = new Date();
-    const hour = now.getHours();
-    const day = now.getDay();
-    
-    // Se já temos uma live, verificar menos frequentemente
-    if (currentLiveVideoId) {
-        // Se já temos uma live, só verificar a cada 5 minutos
-        const timeSinceLastCheck = Date.now() - cache.lastLiveCheck;
-        return timeSinceLastCheck > 300000; // 5 minutos
+// ==================== SISTEMA DE QUOTA ====================
+function updateQuotaUsage(cost) {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Reset diário
+    if (quotaUsage.today !== today) {
+        quotaUsage = {
+            today: today,
+            unitsUsed: 0,
+            lastReset: Date.now()
+        };
     }
-    
-    // Sem live ativa - verificar baseado no horário
-    if (hour >= 0 && hour < 6) { // Madrugada (0-6h)
-        return Math.random() < 0.2; // 20% chance (verifica menos)
+
+    quotaUsage.unitsUsed += cost;
+
+    // Log de uso
+    if (cost > 0) {
+        console.log(`📊 Quota: +${cost} unidades = ${quotaUsage.unitsUsed}/${CONFIG.DAILY_QUOTA_LIMIT}`);
+
+        // Aviso se estiver perto do limite
+        const percentUsed = (quotaUsage.unitsUsed / CONFIG.DAILY_QUOTA_LIMIT) * 100;
+        if (percentUsed > 80) {
+            console.warn(`⚠️ ATENÇÃO: ${percentUsed.toFixed(1)}% da quota utilizada!`);
+        }
     }
-    
-    if (hour >= 6 && hour < 12) { // Manhã (6-12h)
-        return Math.random() < 0.5; // 50% chance
-    }
-    
-    if (hour >= 12 && hour < 18) { // Tarde (12-18h)
-        return Math.random() < 0.7; // 70% chance
-    }
-    
-    // Noite (18-24h) - horário de pico
-    return Math.random() < 0.9; // 90% chance
+
+    return quotaUsage.unitsUsed;
 }
 
-// Função para verificar se há uma live ativa (otimizada)
+function canMakeRequest(minimumQuota = 1) {
+    const remainingQuota = CONFIG.DAILY_QUOTA_LIMIT - quotaUsage.unitsUsed;
+    return remainingQuota >= minimumQuota;
+}
+
+function getOptimizedPollingDelay() {
+    const percentUsed = (quotaUsage.unitsUsed / CONFIG.DAILY_QUOTA_LIMIT) * 100;
+
+    if (percentUsed > 90) return 300000; // 5 minutos se >90%
+    if (percentUsed > 70) return 120000; // 2 minutos se >70%
+    if (percentUsed > 50) return 60000;  // 1 minuto se >50%
+    if (percentUsed > 30) return 30000;  // 30 segundos se >30%
+
+    return 10000; // 10 segundos padrão
+}
+
+// ==================== YOUTUBE API FUNCTIONS ====================
 async function checkForActiveLiveStream() {
     if (isCheckingLive) return { success: false, message: 'Already checking' };
-    
+    if (!canMakeRequest(CONFIG.QUOTA_COSTS.search + CONFIG.QUOTA_COSTS.videos)) {
+        console.log('⏸️ Pausando verificação de live - quota insuficiente');
+        return { success: false, message: 'Insufficient quota' };
+    }
+
     isCheckingLive = true;
-    cache.lastLiveCheck = Date.now();
-    
+    lastLiveCheckTime = Date.now();
+
     try {
         console.log('🔍 Verificando lives ativas...');
-        
+
+        // 1. Buscar live (100 unidades)
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
             params: {
                 part: 'snippet',
@@ -105,305 +138,326 @@ async function checkForActiveLiveStream() {
                 maxResults: 1,
                 key: YOUTUBE_API_KEY
             },
-            timeout: 10000
+            timeout: 5000
         });
+
+        updateQuotaUsage(CONFIG.QUOTA_COSTS.search);
 
         if (response.data.items && response.data.items.length > 0) {
             const liveVideo = response.data.items[0];
             const videoId = liveVideo.id.videoId;
-            
+
             console.log(`✅ Live encontrada: ${liveVideo.snippet.title}`);
-            console.log(`📺 Video ID: ${videoId}`);
-            
-            // Obter liveChatId do vídeo
+
+            // 2. Obter liveChatId (1 unidade)
             const videoResponse = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
                 params: {
                     part: 'liveStreamingDetails',
                     id: videoId,
                     key: YOUTUBE_API_KEY
                 },
-                timeout: 10000
+                timeout: 5000
             });
+
+            updateQuotaUsage(CONFIG.QUOTA_COSTS.videos);
 
             if (videoResponse.data.items && videoResponse.data.items.length > 0) {
                 const liveChatId = videoResponse.data.items[0].liveStreamingDetails?.activeLiveChatId;
-                
+
                 if (liveChatId) {
-                    cache.liveChatId = liveChatId;
-                    cache.videoInfo = {
-                        videoId,
-                        title: liveVideo.snippet.title,
-                        thumbnail: liveVideo.snippet.thumbnails.default.url,
-                        publishedAt: liveVideo.snippet.publishedAt
-                    };
-                    cache.lastChecked = Date.now();
-                    
-                    isCheckingLive = false;
-                    return { 
-                        success: true, 
+                    return {
+                        success: true,
                         liveChatId,
-                        videoInfo: cache.videoInfo
+                        videoInfo: {
+                            videoId,
+                            title: liveVideo.snippet.title,
+                            publishedAt: liveVideo.snippet.publishedAt
+                        }
                     };
                 }
             }
         }
-        
+
         console.log('📭 Nenhuma live ativa no momento');
         isCheckingLive = false;
         return { success: false, message: 'No active live stream' };
-        
+
     } catch (error) {
         console.error('❌ Erro ao verificar live:', error.response?.data?.error?.message || error.message);
-        
-        // Se for erro de quota, esperar mais tempo
-        if (error.response?.data?.error?.code === 403) {
-            console.log('⚠️ Quota excedida ou acesso negado. Aguardando 5 minutos...');
+
+        // Se for erro 403 (quota), aumentar delay drasticamente
+        if (error.response?.status === 403) {
+            console.log('🚫 QUOTA EXCEDIDA! Aumentando intervalos...');
             currentPollingDelay = 300000; // 5 minutos
+            updateQuotaUsage(1000); // Penalidade alta para forçar redução
         }
-        
+
         isCheckingLive = false;
         return { success: false, error: error.message };
     }
 }
 
-// Função para buscar mensagens do chat (otimizada)
-async function fetchChatMessages(liveChatId, pageToken = null) {
+async function fetchChatMessages(liveChatId) {
+    if (!canMakeRequest(CONFIG.QUOTA_COSTS.liveChat)) {
+        console.log('⏸️ Pausando fetch de mensagens - quota insuficiente');
+        return { success: false, message: 'Insufficient quota' };
+    }
+
     try {
         const params = {
             part: 'snippet,authorDetails',
             liveChatId: liveChatId,
-            maxResults: CONFIG.MAX_MESSAGES_PER_POLL, // Limitar para economizar quota
+            maxResults: CONFIG.MAX_MESSAGES_PER_POLL,
             key: YOUTUBE_API_KEY
         };
 
-        if (pageToken) {
-            params.pageToken = pageToken;
-        }
-
         const response = await axios.get('https://www.googleapis.com/youtube/v3/liveChat/messages', {
             params,
-            timeout: 10000
+            timeout: 5000
         });
+
+        // Atualizar quota (5 unidades por request)
+        updateQuotaUsage(CONFIG.QUOTA_COSTS.liveChat);
 
         const messages = response.data.items || [];
         const nextPageToken = response.data.nextPageToken;
-        
-        // Calcular polling delay baseado na API e nossas configurações
-        const apiPollingInterval = response.data.pollingIntervalMillis || 5000;
-        let newPollingDelay = Math.max(
-            CONFIG.MIN_POLLING_INTERVAL,
-            Math.min(apiPollingInterval, CONFIG.MAX_POLLING_INTERVAL)
-        );
-        
-        console.log(`📩 ${messages.length} mensagens | Delay: ${newPollingDelay}ms`);
 
-        // Processar novas mensagens
-        const newMessages = messages.filter(msg => {
+        // NÃO USAR pollingIntervalMillis da API - usar nosso sistema otimizado
+        const optimizedDelay = getOptimizedPollingDelay();
+
+        console.log(`📩 ${messages.length} mensagens | Delay: ${optimizedDelay / 1000}s | Quota: ${quotaUsage.unitsUsed}`);
+
+        // Processar SOMENTE mensagens NOVAS
+        const newMessages = [];
+        for (const msg of messages) {
             const messageId = msg.id;
+
+            // Verificar se é mensagem nova (não está no cache)
             if (!lastChatMessageIds.has(messageId)) {
                 lastChatMessageIds.add(messageId);
-                return true;
-            }
-            return false;
-        }).slice(0, 20) // Limitar para não sobrecarregar o cliente
-        .map(msg => ({
-            id: msg.id,
-            user: msg.authorDetails.displayName,
-            message: msg.snippet.displayMessage,
-            timestamp: msg.snippet.publishedAt,
-            badges: {
-                isModerator: msg.authorDetails.isChatModerator,
-                isOwner: msg.authorDetails.isChatOwner,
-                isVerified: msg.authorDetails.isVerified,
-                isMember: msg.authorDetails.isChatSponsor || false
-            },
-            profileImage: msg.authorDetails.profileImageUrl
-        }));
 
-        // Limitar cache de IDs (evitar memory leak)
-        if (lastChatMessageIds.size > 1000) {
+                // Verificar se a mensagem é recente (últimos 30 segundos)
+                const messageTime = new Date(msg.snippet.publishedAt).getTime();
+                const currentTime = Date.now();
+                const messageAge = currentTime - messageTime;
+
+                // Só mostrar mensagens dos últimos 60 segundos para evitar atraso
+                if (messageAge < 60000) {
+                    newMessages.push({
+                        id: msg.id,
+                        user: msg.authorDetails.displayName,
+                        message: msg.snippet.displayMessage,
+                        timestamp: msg.snippet.publishedAt,
+                        realTime: new Date().toISOString(), // Tempo real do servidor
+                        badges: {
+                            isModerator: msg.authorDetails.isChatModerator,
+                            isOwner: msg.authorDetails.isChatOwner,
+                            isVerified: msg.authorDetails.isVerified,
+                            isMember: msg.authorDetails.isChatSponsor || false
+                        }
+                    });
+                }
+            }
+        }
+
+        // Limitar cache de IDs
+        if (lastChatMessageIds.size > 500) {
             const idsArray = Array.from(lastChatMessageIds);
-            lastChatMessageIds = new Set(idsArray.slice(-500));
+            lastChatMessageIds = new Set(idsArray.slice(-200));
         }
 
         return {
             success: true,
             messages: newMessages,
             nextPageToken,
-            pollingIntervalMillis: newPollingDelay
+            pollingIntervalMillis: optimizedDelay
         };
 
     } catch (error) {
         console.error('❌ Erro ao buscar mensagens:', error.response?.data?.error?.message || error.message);
-        
-        // Se for erro de quota, aumentar o delay
-        if (error.response?.data?.error?.code === 403) {
-            console.log('⚠️ Quota excedida. Aumentando intervalo de polling...');
+
+        // Se for erro de quota, aumentar delay
+        if (error.response?.status === 403) {
+            console.log('🚫 Quota excedida no fetch. Aumentando delay...');
+            updateQuotaUsage(100); // Penalidade
             return {
                 success: false,
                 error: 'quota_exceeded',
-                pollingIntervalMillis: 60000 // 1 minuto
+                pollingIntervalMillis: 300000 // 5 minutos
             };
         }
-        
-        return { 
-            success: false, 
+
+        return {
+            success: false,
             error: error.message,
-            pollingIntervalMillis: 30000 // 30 segundos em caso de erro
+            pollingIntervalMillis: 60000 // 1 minuto em caso de erro
         };
     }
 }
 
-// Sistema de polling otimizado
+// ==================== POLLING SYSTEM ====================
 async function startPolling() {
     if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
     }
 
-    console.log('🔄 Iniciando/Reiniciando polling do chat...');
+    console.log('🔄 Iniciando polling otimizado...');
 
-    // Verificar se devemos procurar por live
-    if (!currentLiveChatId || shouldCheckForLive()) {
+    // Verificar se podemos fazer requests
+    if (!canMakeRequest()) {
+        console.log('⏸️ Polling pausado - quota diária atingida');
+        broadcastSystemMessage('⏸️ Sistema em modo econômico - quota limitada');
+        scheduleNextPoll(300000); // Tentar novamente em 5 minutos
+        return;
+    }
+
+    // Verificar live a cada 5 minutos OU se não temos live atual
+    const timeSinceLastCheck = Date.now() - lastLiveCheckTime;
+    const shouldCheckLive = !currentLiveChatId || timeSinceLastCheck > 300000;
+
+    if (shouldCheckLive) {
         const liveCheck = await checkForActiveLiveStream();
-        
+
         if (liveCheck.success && liveCheck.liveChatId) {
             currentLiveVideoId = liveCheck.videoInfo.videoId;
             currentLiveChatId = liveCheck.liveChatId;
-            
-            // Primeira busca (pega histórico)
-            const chatData = await fetchChatMessages(liveCheck.liveChatId);
-            
-            if (chatData.success) {
-                // Enviar mensagem de sistema
-                broadcast({
-                    type: 'system',
-                    data: {
-                        message: `✅ Conectado à live: ${liveCheck.videoInfo.title}`,
-                        videoInfo: liveCheck.videoInfo
-                    }
-                });
 
-                // Enviar histórico se houver
-                if (chatData.messages.length > 0) {
-                    chatData.messages.forEach(msg => {
-                        broadcast({
-                            type: 'youtube',
-                            data: msg
-                        });
-                    });
+            // Limpar cache de mensagens antigas quando inicia nova live
+            lastChatMessageIds.clear();
+
+            broadcast({
+                type: 'system',
+                data: {
+                    message: `✅ Conectado à live: ${liveCheck.videoInfo.title}`,
+                    videoInfo: liveCheck.videoInfo,
+                    quota: quotaUsage.unitsUsed
                 }
+            });
 
-                // Configurar intervalo baseado na resposta
-                currentPollingDelay = chatData.pollingIntervalMillis || CONFIG.MIN_POLLING_INTERVAL;
-                
-                // Iniciar polling regular
-                startRegularPolling(liveCheck.liveChatId);
-                
-            } else if (chatData.error === 'quota_exceeded') {
-                // Se quota excedida, esperar mais tempo
-                currentPollingDelay = 120000; // 2 minutos
-                scheduleNextPoll();
-            }
+            // Iniciar polling do chat
+            startChatPolling(liveCheck.liveChatId);
+
         } else {
             // Nenhuma live ativa
             handleNoLiveStream();
         }
     } else {
-        // Já temos liveChatId, continuar polling normal
-        startRegularPolling(currentLiveChatId);
+        // Continuar polling do chat existente
+        startChatPolling(currentLiveChatId);
     }
 }
 
-function startRegularPolling(liveChatId) {
+function startChatPolling(liveChatId) {
     if (pollingInterval) {
         clearInterval(pollingInterval);
     }
 
-    pollingInterval = setInterval(async () => {
-        const chatData = await fetchChatMessages(liveChatId);
-        
-        if (chatData.success && chatData.messages.length > 0) {
-            chatData.messages.forEach(msg => {
-                broadcast({
-                    type: 'youtube',
-                    data: msg
-                });
-            });
-        }
-        
-        // Ajustar delay se necessário
-        if (chatData.pollingIntervalMillis && chatData.pollingIntervalMillis !== currentPollingDelay) {
-            currentPollingDelay = chatData.pollingIntervalMillis;
-            console.log(`⚡ Ajustando polling delay para: ${currentPollingDelay}ms`);
-            clearInterval(pollingInterval);
-            startRegularPolling(liveChatId);
-        }
-        
-        // Verificar se ainda estamos em live a cada 10 ciclos
-        if (Math.random() < 0.1) { // 10% chance a cada polling
-            setTimeout(() => {
-                if (shouldCheckForLive()) {
-                    checkForActiveLiveStream().then(result => {
-                        if (!result.success) {
-                            handleNoLiveStream();
-                        }
-                    });
-                }
-            }, 1000);
-        }
-        
-    }, currentPollingDelay);
+    // Delay otimizado baseado na quota
+    currentPollingDelay = getOptimizedPollingDelay();
 
-    console.log(`✅ Polling iniciado (${currentPollingDelay}ms)`);
+    console.log(`⚡ Polling do chat iniciado: ${currentPollingDelay / 1000}s`);
+
+    // Primeira execução imediata
+    fetchAndBroadcastMessages(liveChatId);
+
+    // Configurar intervalo
+    pollingInterval = setInterval(() => {
+        fetchAndBroadcastMessages(liveChatId);
+    }, currentPollingDelay);
+}
+
+async function fetchAndBroadcastMessages(liveChatId) {
+    if (!canMakeRequest(CONFIG.QUOTA_COSTS.liveChat)) {
+        console.log('⏸️ Skipping fetch - insufficient quota');
+        return;
+    }
+
+    const chatData = await fetchChatMessages(liveChatId);
+
+    if (chatData.success && chatData.messages.length > 0) {
+        chatData.messages.forEach(msg => {
+            // Adicionar timestamp do servidor para sincronização
+            msg.serverTime = new Date().toISOString();
+            broadcast({
+                type: 'youtube',
+                data: msg
+            });
+        });
+
+        // Log da última mensagem
+        const lastMsg = chatData.messages[chatData.messages.length - 1];
+        console.log(`💬 Última mensagem: ${lastMsg.user}: ${lastMsg.message.substring(0, 30)}...`);
+    }
+
+    // Ajustar delay se necessário
+    if (chatData.pollingIntervalMillis && Math.abs(chatData.pollingIntervalMillis - currentPollingDelay) > 5000) {
+        currentPollingDelay = chatData.pollingIntervalMillis;
+        console.log(`🔧 Ajustando delay para: ${currentPollingDelay / 1000}s`);
+        restartPolling();
+    }
 }
 
 function handleNoLiveStream() {
     currentLiveVideoId = null;
     currentLiveChatId = null;
-    
-    // Limpar IDs antigos quando não há live
     lastChatMessageIds.clear();
-    
-    broadcast({
-        type: 'system',
-        data: {
-            message: '⏳ Aguardando transmissão ao vivo...',
-            isLive: false
-        }
-    });
 
-    console.log('⏳ Nenhuma live ativa, verificando novamente em 1 minuto...');
-    
-    // Agendar próxima verificação
-    scheduleNextPoll();
+    broadcastSystemMessage('⏳ Aguardando transmissão ao vivo...');
+
+    console.log('⏳ Sem live ativa. Próxima verificação em 5 minutos...');
+    scheduleNextPoll(300000); // 5 minutos
 }
 
-function scheduleNextPoll() {
+function scheduleNextPoll(delay = null) {
     if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
     }
-    
-    setTimeout(startPolling, CONFIG.CHECK_LIVE_INTERVAL);
+
+    const nextDelay = delay || currentPollingDelay;
+    setTimeout(startPolling, nextDelay);
 }
 
-// Broadcast function
+function restartPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+
+    if (currentLiveChatId) {
+        startChatPolling(currentLiveChatId);
+    } else {
+        startPolling();
+    }
+}
+
+// ==================== BROADCAST & SYSTEM ====================
 function broadcast(data) {
     const sseMessage = `data: ${JSON.stringify(data)}\n\n`;
-    const now = Date.now();
-    
+
     clients.forEach((client, index) => {
         try {
             client.write(sseMessage);
         } catch (error) {
-            // Remover cliente se der erro
+            // Remover cliente desconectado
             clients.splice(index, 1);
         }
     });
 }
 
-// Rotas
+function broadcastSystemMessage(message) {
+    broadcast({
+        type: 'system',
+        data: {
+            message,
+            timestamp: new Date().toISOString(),
+            quota: quotaUsage.unitsUsed
+        }
+    });
+}
+
+// ==================== ROUTES ====================
 app.get('/events', (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -427,12 +481,13 @@ app.get('/events', (req, res) => {
     res.write(`data: ${JSON.stringify({
         type: 'welcome',
         data: {
-            message: '💬 Chat OBS iniciado',
-            youtubeStatus: currentLiveVideoId ? 'Conectado' : 'Verificando...',
+            message: '💬 Chat OBS - Modo Otimizado',
+            youtubeStatus: currentLiveVideoId ? 'LIVE' : 'OFFLINE',
             timestamp: new Date().toLocaleTimeString('pt-BR'),
-            config: {
-                twitchChannel: CONFIG.TWITCH_CHANNEL,
-                youtubeChannelId: YOUTUBE_CHANNEL_ID
+            quota: quotaUsage.unitsUsed,
+            settings: {
+                pollingDelay: currentPollingDelay / 1000 + 's',
+                dailyQuota: CONFIG.DAILY_QUOTA_LIMIT
             }
         }
     })}\n\n`);
@@ -444,7 +499,7 @@ app.get('/events', (req, res) => {
     });
 });
 
-// Rota de status
+// Rota de status com informações de quota
 app.get('/status', (req, res) => {
     res.json({
         status: 'ok',
@@ -453,28 +508,57 @@ app.get('/status', (req, res) => {
             videoId: currentLiveVideoId,
             liveChatId: currentLiveChatId,
             pollingDelay: currentPollingDelay,
-            quotaOptimized: true,
-            lastChecked: cache.lastChecked
+            lastChecked: lastLiveCheckTime
+        },
+        quota: {
+            unitsUsed: quotaUsage.unitsUsed,
+            dailyLimit: CONFIG.DAILY_QUOTA_LIMIT,
+            percentUsed: ((quotaUsage.unitsUsed / CONFIG.DAILY_QUOTA_LIMIT) * 100).toFixed(1) + '%',
+            canMakeRequests: canMakeRequest(),
+            today: quotaUsage.today
         },
         system: {
             clients: clients.length,
-            memoryUsage: process.memoryUsage(),
-            uptime: process.uptime()
+            uptime: process.uptime(),
+            memory: process.memoryUsage().heapUsed / 1024 / 1024 + ' MB'
         }
     });
 });
 
-// Rota de teste
-app.get('/test', (req, res) => {
-    res.json({
-        message: 'Servidor funcionando',
-        timestamp: new Date().toISOString(),
-        youtubeApiKey: YOUTUBE_API_KEY ? 'Configurada' : 'Não configurada',
-        channelId: YOUTUBE_CHANNEL_ID
-    });
+// Rota para reset manual (apenas desenvolvimento)
+app.get('/reset-quota', (req, res) => {
+    if (process.env.NODE_ENV === 'development') {
+        quotaUsage.unitsUsed = 0;
+        quotaUsage.lastReset = Date.now();
+        res.json({ message: 'Quota resetada', quotaUsage });
+    } else {
+        res.status(403).json({ error: 'Apenas em desenvolvimento' });
+    }
 });
 
-// Outras rotas
+// Rota para simular mensagem (para testes)
+app.get('/test-message', (req, res) => {
+    const testMsg = {
+        type: 'youtube',
+        data: {
+            id: 'test-' + Date.now(),
+            user: 'UsuarioTeste',
+            message: 'Esta é uma mensagem de teste em tempo real! ' + new Date().toLocaleTimeString(),
+            timestamp: new Date().toISOString(),
+            serverTime: new Date().toISOString(),
+            badges: {
+                isModerator: false,
+                isOwner: false,
+                isVerified: false
+            }
+        }
+    };
+
+    broadcast(testMsg);
+    res.json({ sent: true, message: testMsg.data.message });
+});
+
+// Rotas padrão
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
@@ -482,16 +566,15 @@ app.get('/', (req, res) => {
 app.get('/config.js', (req, res) => {
     const protocol = req.hostname.includes('onrender.com') ? 'https' : req.protocol;
     const serverUrl = `${protocol}://${req.get('host')}`;
-    
+
     const config = `
 const CONFIG = {
     twitchChannel: "${CONFIG.TWITCH_CHANNEL}",
     serverUrl: "${serverUrl}",
-    youtubeChannelId: "${YOUTUBE_CHANNEL_ID}",
-    apiConfigured: ${!!YOUTUBE_API_KEY}
+    youtubeChannelId: "${YOUTUBE_CHANNEL_ID}"
 };
     `;
-    
+
     res.header('Content-Type', 'application/javascript');
     res.send(config);
 });
@@ -501,44 +584,36 @@ app.get('/health', (req, res) => {
         status: 'ok',
         youtubeLive: !!currentLiveVideoId,
         clients: clients.length,
-        pollingDelay: currentPollingDelay,
+        quota: quotaUsage.unitsUsed,
         timestamp: new Date().toISOString()
     });
 });
 
-// Rota para forçar verificação de live
-app.get('/check-live', async (req, res) => {
-    const result = await checkForActiveLiveStream();
-    res.json(result);
-});
-
-// Middleware de erro
-app.use((err, req, res, next) => {
-    console.error('❌ Erro no servidor:', err);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-});
-
-// Iniciar servidor
+// ==================== START SERVER ====================
 app.listen(PORT, () => {
     console.log(`🚀 Servidor na porta ${PORT}`);
-    console.log(`📺 YouTube Channel ID: ${YOUTUBE_CHANNEL_ID}`);
-    console.log(`🔑 YouTube API Key: ${YOUTUBE_API_KEY ? 'Configurada ✓' : 'NÃO configurada ✗'}`);
-    console.log(`⚡ Otimizações de quota: ATIVADAS`);
-    console.log(`📊 Configurações:`, CONFIG);
-    
-    // Iniciar polling após 3 segundos
-    setTimeout(startPolling, 3000);
+    console.log(`📺 YouTube: ${YOUTUBE_CHANNEL_ID}`);
+    console.log(`🔑 API Key: ${YOUTUBE_API_KEY ? 'Configurada' : 'NÃO CONFIGURADA!'}`);
+    console.log(`💰 Quota diária: ${CONFIG.DAILY_QUOTA_LIMIT} unidades`);
+    console.log(`⚡ Polling otimizado: ${currentPollingDelay / 1000}s`);
+
+    if (!YOUTUBE_API_KEY) {
+        console.warn('⚠️ ⚠️ ⚠️ AVISO: YOUTUBE_API_KEY não configurada!');
+        console.warn('   O chat do YouTube não funcionará sem uma API Key.');
+        console.warn('   Obtenha uma em: https://console.cloud.google.com/');
+    }
+
+    // Iniciar polling após 2 segundos
+    setTimeout(startPolling, 2000);
 });
 
-// Limpeza ao sair
+// Graceful shutdown
 process.on('SIGTERM', () => {
-    console.log('🛑 Servidor encerrando...');
+    console.log('🛑 Encerrando servidor...');
     if (pollingInterval) clearInterval(pollingInterval);
-    process.exit(0);
-});
 
-process.on('SIGINT', () => {
-    console.log('🛑 Servidor interrompido');
-    if (pollingInterval) clearInterval(pollingInterval);
-    process.exit(0);
+    // Enviar mensagem de despedida
+    broadcastSystemMessage('🔴 Servidor encerrando...');
+
+    setTimeout(() => process.exit(0), 1000);
 });
