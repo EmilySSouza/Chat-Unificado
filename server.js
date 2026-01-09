@@ -1,36 +1,24 @@
 const express = require('express');
 const { LiveChat } = require('youtube-chat');
-const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const CONFIG = {
     twitchChannel: process.env.TWITCH_CHANNEL || "funilzinha",
-    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UC5ooSCrMhz10WUWrc6IlT3Q",
-    youtubeVideoId: process.env.YOUTUBE_VIDEO_ID || "nZx2C80T284" // ADICIONE SEU VIDEO ID AQUI
+    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UC5ooSCrMhz10WUWrc6IlT3Q" // Channel ID CORRETO
 };
 
-// Middleware CORS para HTTPS
+// CORS simplificado
 app.use((req, res, next) => {
-    // SEMPRE usa HTTPS no Render
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const isSecure = protocol === 'https';
-
-    if (isSecure) {
-        res.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    }
-
-    // Permite qualquer origem (Render + localhost)
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers',
-        'Origin, X-Requested-With, Content-Type, Accept, Cache-Control');
+    res.header('Access-Control-Allow-Headers', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-
+    
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
     }
-
+    
     next();
 });
 
@@ -40,136 +28,148 @@ let youtubeChat = null;
 let isYouTubeLive = false;
 const clients = [];
 
-// FUNÇÃO SIMPLIFICADA DE CONEXÃO YOUTUBE
+// CONEXÃO SIMPLIFICADA - SEGUINDO A DOCUMENTAÇÃO
 async function connectYouTube() {
     try {
-        console.log('🔄 Iniciando conexão YouTube...');
-
+        console.log('🔄 Iniciando YouTube...');
+        
         // Para conexão anterior
         if (youtubeChat) {
             try {
                 youtubeChat.stop();
-            } catch (e) { }
+                console.log('🔌 Conexão anterior encerrada');
+            } catch (e) {}
         }
-
-        // USA VIDEO ID FIXO (mais confiável no Render)
-        const videoId = CONFIG.youtubeVideoId;
-
-        if (!videoId) {
-            console.log('❌ Nenhum videoId configurado');
-            return;
-        }
-
-        console.log(`🎯 Conectando ao videoId: ${videoId}`);
-
+        
+        // SEGUINDO A DOCUMENTAÇÃO: Usa apenas channelId
+        console.log(`📺 Usando channelId: ${CONFIG.youtubeChannelId}`);
+        
         youtubeChat = new LiveChat({
-            videoId: videoId, // Video ID FIXO
-            pollingInterval: 3000
+            channelId: CONFIG.youtubeChannelId  // APENAS channelId, SEM videoId!
         });
-
-        youtubeChat.on('chat', (message) => {
+        
+        // Eventos conforme documentação
+        youtubeChat.on('start', (liveId) => {
+            console.log(`✅ YouTube: Conectado! Live ID: ${liveId}`);
+            isYouTubeLive = true;
+            
+            broadcast({
+                type: 'system',
+                data: `✅ YouTube: Conectado à live! (ID: ${liveId})`
+            });
+        });
+        
+        youtubeChat.on('chat', (chatItem) => {
             try {
+                // Processa mensagem conforme documentação
                 let messageText = '';
-
-                if (typeof message.message === 'string') {
-                    messageText = message.message;
-                } else if (Array.isArray(message.message)) {
-                    messageText = message.message
-                        .map(item => item.text || '')
+                
+                if (Array.isArray(chatItem.message)) {
+                    messageText = chatItem.message
+                        .map(item => 'text' in item ? item.text : '')
                         .filter(text => text)
                         .join(' ');
                 }
-
-                const userName = message.author?.name || 'Anônimo';
-
+                
+                const userName = chatItem.author?.name || 'Anônimo';
+                
                 console.log(`📩 YouTube: ${userName}: ${messageText.substring(0, 50)}...`);
-
+                
                 broadcast({
                     type: 'youtube',
                     data: {
                         user: userName,
                         message: messageText,
-                        time: new Date().toLocaleTimeString('pt-BR'),
+                        time: chatItem.timestamp ? 
+                            chatItem.timestamp.toLocaleTimeString('pt-BR') : 
+                            new Date().toLocaleTimeString('pt-BR'),
                         badges: {
-                            isMember: message.isMembership || message.isMember,
-                            isModerator: message.isModerator,
-                            isOwner: message.isOwner
+                            isMember: chatItem.isMembership,
+                            isModerator: chatItem.isModerator,
+                            isOwner: chatItem.isOwner,
+                            isVerified: chatItem.isVerified
                         }
                     }
                 });
-
+                
             } catch (error) {
                 console.error('❌ Erro mensagem:', error);
             }
         });
-
-        youtubeChat.on('start', () => {
-            console.log('✅ YouTube: Conectado!');
-            isYouTubeLive = true;
-
+        
+        youtubeChat.on('end', (reason) => {
+            console.log(`🔴 YouTube: Chat encerrado. Razão: ${reason || 'Desconhecida'}`);
+            isYouTubeLive = false;
+            
             broadcast({
                 type: 'system',
-                data: '✅ YouTube: Conectado à transmissão!'
+                data: '🔴 YouTube: Chat encerrado'
             });
-        });
-
-        youtubeChat.on('error', (error) => {
-            console.error('❌ YouTube Erro:', error.message);
-            isYouTubeLive = false;
-
+            
             // Reconecta em 30 segundos
             setTimeout(connectYouTube, 30000);
         });
-
-        await youtubeChat.start();
-        console.log('🎉 YouTube conectado com sucesso!');
-
+        
+        youtubeChat.on('error', (err) => {
+            console.error('❌ YouTube Erro:', err.message || err);
+            
+            // Tipos específicos de erro
+            if (err.message?.includes('Live Stream was not found')) {
+                console.log('⏳ Canal não está em live no momento');
+                isYouTubeLive = false;
+                
+                // Não envia mensagem para o chat
+                // Apenas log no servidor
+                
+            } else if (err.message?.includes('No live stream')) {
+                console.log('📴 Nenhuma transmissão ativa');
+                isYouTubeLive = false;
+            }
+            
+            // Reconecta em 2 minutos
+            setTimeout(connectYouTube, 120000);
+        });
+        
+        // Inicia conforme documentação
+        const ok = await youtubeChat.start();
+        
+        if (ok) {
+            console.log('🎉 YouTube: Chat iniciado com sucesso!');
+        } else {
+            console.log('⚠️ YouTube: Não conseguiu iniciar');
+            setTimeout(connectYouTube, 30000);
+        }
+        
     } catch (error) {
-        console.error('💥 Erro conexão YouTube:', error.message);
-        setTimeout(connectYouTube, 30000);
+        console.error('💥 Erro crítico YouTube:', error.message);
+        
+        // Reconecta em 3 minutos
+        setTimeout(connectYouTube, 180000);
     }
 }
 
-// FUNÇÃO BROADCAST
+// BROADCAST (mantenha igual)
 function broadcast(data) {
     const sseMessage = `data: ${JSON.stringify(data)}\n\n`;
-
-    // Remove clientes desconectados
-    const activeClients = [];
-
     clients.forEach(client => {
         try {
             client.write(sseMessage);
-            activeClients.push(client);
-        } catch (error) {
-            // Cliente desconectado
-        }
+        } catch (error) {}
     });
-
-    // Atualiza lista
-    clients.length = 0;
-    clients.push(...activeClients);
 }
 
-// ROTA SSE COM HTTPS FORÇADO
+// ROTAS (mantenha iguais)
 app.get('/events', (req, res) => {
-    // Força HTTPS no Render
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    if (protocol !== 'https' && process.env.NODE_ENV === 'production') {
-        console.log('⚠️ Request não seguro, redirecionando...');
-    }
-
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
+        'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'X-Accel-Buffering': 'no'
+        'Access-Control-Allow-Origin': '*'
     });
 
     clients.push(res);
 
-    // Mantém conexão viva
+    // Keep alive
     const keepAlive = setInterval(() => {
         try {
             res.write(': keepalive\n\n');
@@ -178,87 +178,58 @@ app.get('/events', (req, res) => {
         }
     }, 30000);
 
-    // Mensagem inicial
     res.write(`data: ${JSON.stringify({
         type: 'welcome',
         data: {
-            message: '💬 Chat Unificado conectado',
-            youtubeStatus: isYouTubeLive ? 'Conectado' : 'Conectando...',
-            timestamp: new Date().toLocaleTimeString('pt-BR'),
-            server: 'Render'
+            message: '💬 Chat OBS iniciado',
+            youtubeStatus: isYouTubeLive ? 'Conectado' : 'Verificando...',
+            timestamp: new Date().toLocaleTimeString('pt-BR')
         }
     })}\n\n`);
 
-    // Limpa quando cliente desconectar
     req.on('close', () => {
         clearInterval(keepAlive);
         const index = clients.indexOf(res);
-        if (index > -1) {
-            clients.splice(index, 1);
-        }
+        if (index > -1) clients.splice(index, 1);
     });
 });
 
-// ROTA PRINCIPAL
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
 
-// ROTA CONFIG.JS DINÂMICA COM HTTPS
 app.get('/config.js', (req, res) => {
-    // SEMPRE usa HTTPS no Render
-    const isRender = req.hostname.includes('onrender.com');
-    const protocol = isRender ? 'https' : req.protocol;
+    const protocol = req.hostname.includes('onrender.com') ? 'https' : req.protocol;
     const serverUrl = `${protocol}://${req.get('host')}`;
-
+    
     const config = `
-// Configuração automática
 const CONFIG = {
     twitchChannel: "${CONFIG.twitchChannel}",
-    serverUrl: "${serverUrl}",  // HTTPS no Render
+    serverUrl: "${serverUrl}",
     youtubeChannelId: "${CONFIG.youtubeChannelId}"
 };
-
-// Debug info
-console.log('🌐 Server URL:', CONFIG.serverUrl);
-console.log('🔗 Twitch Channel:', CONFIG.twitchChannel);
     `;
-
+    
     res.header('Content-Type', 'application/javascript');
-    res.header('Cache-Control', 'no-cache, no-store');
     res.send(config);
 });
 
-// ROTA HEALTH
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         youtube: !!youtubeChat,
         youtubeLive: isYouTubeLive,
         clients: clients.length,
-        environment: process.env.NODE_ENV || 'development',
         timestamp: new Date().toISOString()
     });
 });
 
-// ROTA PARA FORÇAR HTTPS (importante!)
-app.get('*', (req, res, next) => {
-    if (process.env.NODE_ENV === 'production' &&
-        req.headers['x-forwarded-proto'] !== 'https') {
-        const httpsUrl = `https://${req.get('host')}${req.url}`;
-        console.log(`🔒 Redirecionando para HTTPS: ${httpsUrl}`);
-        return res.redirect(301, httpsUrl);
-    }
-    next();
-});
-
-// INICIA SERVIDOR
+// INICIA
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`🌐 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🚀 Servidor na porta ${PORT}`);
     console.log(`📺 Twitch: ${CONFIG.twitchChannel}`);
-    console.log(`🎥 YouTube Video ID: ${CONFIG.youtubeVideoId}`);
-    console.log('🔄 Iniciando conexões...');
-
+    console.log(`🎥 YouTube Channel ID: ${CONFIG.youtubeChannelId}`);
+    console.log('🔄 Iniciando YouTube...');
+    
     connectYouTube();
 });

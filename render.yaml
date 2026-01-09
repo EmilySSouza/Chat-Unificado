@@ -3,7 +3,7 @@ services:
     name: chat-obs
     env: node
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: node server.js
     envVars:
       - key: PORT
         value: 3000
@@ -11,5 +11,3 @@ services:
         value: funilzinha
       - key: YOUTUBE_CHANNEL_ID
         value: UC5ooSCrMhz10WUWrc6IlT3Q
-    healthCheckPath: /health
-    initialDelay: 60
