@@ -52,16 +52,21 @@ function formatTime(timestamp) {
 
 function addMessage(data) {
     const messagesDiv = document.getElementById('messages');
-    if (!messagesDiv) return;
-
-    // Verificar se está no final ANTES de adicionar (com margem de 20px)
-    const scrollPosition = messagesDiv.scrollTop;
-    const scrollHeight = messagesDiv.scrollHeight;
-    const clientHeight = messagesDiv.clientHeight;
-    const isAtBottom = (scrollHeight - scrollPosition - clientHeight) <= 20;
-
+    if (!messagesDiv) {
+        console.error('❌ Elemento #messages não encontrado!');
+        return;
+    }
+    
+    console.log('📨 Adicionando mensagem, scrollTop:', messagesDiv.scrollTop, 
+                'scrollHeight:', messagesDiv.scrollHeight, 
+                'clientHeight:', messagesDiv.clientHeight);
+    
+    // Verificar SE ESTÁ NO FINAL (de forma mais tolerante)
+    const isAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 100;
+    
+    // Criar elemento da mensagem
     const message = document.createElement('div');
-
+    
     // Dados da mensagem
     const platform = data.platform || 'system';
     const user = escapeHtml(data.data?.user || 'Sistema');
@@ -69,8 +74,8 @@ function addMessage(data) {
     const badges = data.data?.badges || {};
     const timestamp = data.data?.timestamp || new Date().toISOString();
     const userColor = data.data?.color || '#FFFFFF';
-
-    // Gerar badges HTML - ESTILO ANTERIOR
+    
+    // Gerar badges HTML
     let badgesHtml = '';
     if (platform === 'twitch') {
         if (badges.isBroadcaster) badgesHtml += '<span class="badge broadcaster" title="Broadcaster">👑</span>';
@@ -84,14 +89,14 @@ function addMessage(data) {
         if (badges.isModerator) badgesHtml += '<span class="badge mod" title="Moderador">🛡️</span>';
         if (badges.isVerified) badgesHtml += '<span class="badge verified" title="Verificado">✓</span>';
     }
-
+    
     // Montar mensagem
     message.className = `message ${platform}-message`;
     message.innerHTML = `
         <div class="message-header">
             <span class="message-platform">
-                ${platform === 'youtube' ? '🎥' :
-            platform === 'twitch' ? '🎮' : '⚙️'}
+                ${platform === 'youtube' ? '🎥' : 
+                  platform === 'twitch' ? '🎮' : '⚙️'}
             </span>
             <span class="message-user" style="color: ${userColor}">${user}</span>
             ${badgesHtml}
@@ -105,26 +110,21 @@ function addMessage(data) {
         </div>
         <div class="message-content">${messageText}</div>
     `;
-
-    // Adicionar ao FINAL do chat
+    
+    // Adicionar mensagem
     messagesDiv.appendChild(message);
-
-    // Scroll automático inteligente
-    if (autoScrollEnabled && (isAtBottom || !isUserScrolling)) {
-        // Pequeno delay para garantir renderização
-        setTimeout(() => {
-            // Scroll suave apenas se estiver próximo do final
-            const newIsAtBottom = (messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight) <= 50;
-            if (newIsAtBottom) {
-                messagesDiv.scrollTo({
-                    top: messagesDiv.scrollHeight,
-                    behavior: 'smooth'
-                });
-            }
-        }, 10);
-    }
-
-    // Limitar mensagens (máximo 300)
+    
+    // DEBUG: Log para verificar
+    console.log('✅ Mensagem adicionada. Nova altura:', messagesDiv.scrollHeight);
+    
+    // SCROLL AUTOMÁTICO - FORÇADO
+    // Sem verificação, sempre scrollar para o final
+    setTimeout(() => {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        console.log('⬇️ Scrolling para:', messagesDiv.scrollTop);
+    }, 50);
+    
+    // Limitar mensagens (opcional)
     const maxMessages = 300;
     if (messagesDiv.children.length > maxMessages) {
         const toRemove = messagesDiv.children.length - maxMessages;

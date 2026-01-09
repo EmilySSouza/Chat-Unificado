@@ -553,3 +553,28 @@ button:active {
     color: #1DA1F2;
     font-weight: bold;
 }
+
+/* NO SEU style.css - ADICIONE ESTAS REGRAS */
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* GARANTIR que é um container de scroll */
+    height: calc(100vh - 120px); /* Ajuste conforme necessário */
+    max-height: 100%;
+}
+
+/* Garantir que o body e html não tenham overflow */
+html, body {
+    height: 100%;
+    overflow: hidden !important;
+}
+
+.chat-container {
+    height: 100vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
