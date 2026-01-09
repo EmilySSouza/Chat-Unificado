@@ -26,6 +26,44 @@ console.log('✅ Configuração:', CONFIG);
 
 // ==================== FUNÇÕES ====================
 
+async function fetchGlobalBadges() {
+    try {
+        console.log('🌐 Buscando badges globais...');
+
+        const response = await fetch('https://api.twitch.tv/helix/chat/badges/global', {
+            headers: {
+                'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+                'Accept': 'application/vnd.twitchtv.v5+json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Organiza badges por set_id e versão
+        data.data.forEach(badge => {
+            twitchBadgesCache.global[badge.set_id] = {};
+            badge.versions.forEach(version => {
+                twitchBadgesCache.global[badge.set_id][version.id] = {
+                    url_1x: version.image_url_1x,
+                    url_2x: version.image_url_2x,
+                    url_4x: version.image_url_4x,
+                    title: version.title
+                };
+            });
+        });
+
+        console.log(`✅ ${Object.keys(twitchBadgesCache.global).length} badges globais carregadas`);
+        return true;
+    } catch (error) {
+        console.error('❌ Erro ao carregar badges globais:', error.message);
+        return false;
+    }
+}
+
 // Busca badges específicas do canal
 async function fetchChannelBadges(channelId) {
     try {
@@ -119,76 +157,49 @@ function addMessage(platform, user, text, badges = {}) {
     if (platform === 'twitch') {
         console.log(`🎯 Renderizando: ${user} com badges:`, badges.badgeList);
 
-        // **NOVA LÓGICA: URLs DIRETAS**
+        // MÉTODO 1: Usar URLs diretas (mais confiável)
         if (badges.badgeList && badges.badgeList.length > 0) {
             badges.badgeList.forEach(badge => {
                 const [setId, version] = badge.split('/');
                 console.log(`   Badge: ${setId}/${version}`);
 
-                // MAPEAMENTO COMPLETO DE BADGES DA TWITCH
-                const badgeMapping = {
-                    // Badges principais
+                // URLs diretas das badges da Twitch
+                const badgeUrls = {
                     'broadcaster': `https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/${version}/1`,
                     'moderator': `https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/${version}/1`,
                     'vip': `https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/${version}/1`,
-
-                    // Subscriber (genérico - funciona para qualquer mês)
                     'subscriber': `https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${version}/1`,
-
-                    // Founder (sub fundador)
                     'founder': `https://static-cdn.jtvnw.net/badges/v1/511b78a9-ab37-472f-9569-457753bbe7d4/${version}/1`,
-
-                    // Prime Gaming
-                    'premium': `https://static-cdn.jtvnw.net/badges/v1/bbbe0db0-a598-423e-86d0-f9fb98ca1933/${version}/1`,
-
-                    // Bits/Turbo
-                    'bits': `https://static-cdn.jtvnw.net/badges/v1/73f4d585-6c95-4ab3-a6d2-6d3a5b2d3250/${version}/1`,
-                    'bits-charity': `https://static-cdn.jtvnw.net/badges/v1/0c4a86a0-8b4a-4c8a-ba7a-4c9d214c4c7c/${version}/1`,
-
-                    // Hype Train
-                    'hype-train': `https://static-cdn.jtvnw.net/badges/v1/eb7c6f2d-8f14-4c3e-9c9b-7c3b6f2c3b7a/${version}/1`,
-
-                    // Parceiros
-                    'partner': `https://static-cdn.jtvnw.net/badges/v1/d12a2e27-16f6-41d0-ab77-b780518f00a3/${version}/1`,
-                    'staff': `https://static-cdn.jtvnw.net/badges/v1/d97c37bd-a6f5-4c38-8f5a-84616b6470f3/${version}/1`,
-                    'admin': `https://static-cdn.jtvnw.net/badges/v1/9ef7e029-4cdf-4d4d-a0d5-e2b3fb2583fe/${version}/1`,
-                    'global_mod': `https://static-cdn.jtvnw.net/badges/v1/9384c43e-4ce7-4e94-b2a1-b93656896eba/${version}/1`,
+                    'premium': `https://static-cdn.jtvnw.net/badges/v1/bbbe0db0-a598-423e-86d0-f9fb98ca1933/${version}/1`
                 };
 
-                // Subscriber com anos (0-12, 13-24, etc.)
-                if (setId === 'subscriber') {
-                    const months = parseInt(version);
-                    let yearTier = '0';
-
-                    if (months >= 1 && months <= 12) yearTier = '0';
-                    else if (months >= 13 && months <= 24) yearTier = '12';
-                    else if (months >= 25 && months <= 36) yearTier = '24';
-                    else if (months >= 37 && months <= 48) yearTier = '36';
-                    else yearTier = '0';
-
-                    badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${yearTier}/1" 
-                                  class="badge-icon" 
-                                  title="Subscriber (${months} meses)"
-                                  alt="subscriber">`;
-                }
-                // Outras badges
-                else if (badgeMapping[setId]) {
-                    badgesHtml += `<img src="${badgeMapping[setId]}" 
+                if (badgeUrls[setId]) {
+                    badgesHtml += `<img src="${badgeUrls[setId]}" 
                                       class="badge-icon" 
                                       title="${setId}"
                                       alt="${setId}">`;
-                }
-                // Se for um tipo desconhecido, tenta URL genérica
-                else if (setId && version) {
-                    // Fallback para tentar URL direta (às vezes funciona)
-                    const fallbackUrl = `https://static-cdn.jtvnw.net/badges/v1/${setId}/${version}/1`;
-                    badgesHtml += `<img src="${fallbackUrl}" 
+                } else if (setId.startsWith('subscriber')) {
+                    // Para subscribers com meses específicos
+                    badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${version}/1" 
                                       class="badge-icon" 
-                                      onerror="this.style.display='none'"
-                                      title="${setId}"
-                                      alt="${setId}">`;
+                                      title="Subscriber"
+                                      alt="subscriber">`;
+                } else {
+                    console.log(`   ❌ Badge não mapeada: ${setId}`);
                 }
             });
+        }
+
+        // MÉTODO 2: Fallback para status direto
+        if (!badgesHtml) {
+            if (badges.isBroadcaster) {
+                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/1/1" 
+                                  class="badge-icon" title="Broadcaster">`;
+            }
+            if (badges.isModerator) {
+                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/1/1" 
+                                  class="badge-icon" title="Moderator">`;
+            }
         }
 
         console.log(`   ✅ HTML gerado: ${badgesHtml ? 'Sim' : 'Não'}`);
@@ -294,6 +305,12 @@ function connectToServer() {
 
 async function connectTwitch() {
     console.log('🎮 Conectando Twitch...');
+
+    // 1. CARREGA BADGES ANTES DE CONECTAR
+    console.log('🔄 Carregando badges da Twitch...');
+
+    // Carrega badges globais (sempre disponíveis)
+    await fetchGlobalBadges();
 
     // Tenta carregar badges específicas do canal
     try {
