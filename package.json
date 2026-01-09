@@ -1,17 +1,17 @@
 {
-  "name": "chat-obs-optimized",
-  "version": "3.0.0",
-  "description": "Chat unificado otimizado para quota gratuita",
+  "name": "chat-obs",
+  "version": "1.0.0",
+  "description": "Chat unificado Twitch e YouTube para OBS",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "test": "node test-quota.js",
-    "reset": "curl http://localhost:3000/reset-quota"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "tmi.js": "^1.8.5",
+    "ws": "^8.14.2"
   },
   "engines": {
     "node": ">=16.0.0"

@@ -1,294 +1,194 @@
-// script.js - Cliente atualizado
-(function () {
-    // Configuração automática
-    const isRender = window.location.hostname.includes('onrender.com');
-    const isLocal = window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1';
-
-    if (typeof CONFIG === 'undefined') {
-        console.log('⚙️ Configurando automaticamente...');
-
-        if (isRender) {
-            window.CONFIG = {
-                twitchChannel: "funilzinha",
-                serverUrl: "https://chat-unificado.onrender.com",
-                youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
-            };
-        } else if (isLocal) {
-            window.CONFIG = {
-                twitchChannel: "funilzinha",
-                serverUrl: "http://localhost:3000",
-                youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
-            };
-        } else {
-            window.CONFIG = {
-                twitchChannel: "funilzinha",
-                serverUrl: window.location.origin,
-                youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
-            };
-        }
-
-        console.log('✅ CONFIG:', window.CONFIG);
-    }
-})();
-
-let eventSource = null;
-let twitchSocket = null;
+// script.js
+let ws = null;
+let reconnectTimeout = null;
 let reconnectAttempts = 0;
-let lastMessageTime = 0;
-const MESSAGE_COOLDOWN = 1000; // 1 segundo entre mensagens
 
-// Função para escapar HTML
+// Funções de utilidade
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// Função para formatar tempo relativo
-function formatTimeAgo(timestamp) {
+function formatTime(timestamp) {
     if (!timestamp) return 'agora';
-
-    const messageTime = new Date(timestamp).getTime();
-    const now = Date.now();
-    const diff = now - messageTime;
-
-    if (diff < 1000) return 'agora';
-    if (diff < 60000) return `${Math.floor(diff / 1000)}s atrás`;
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}min atrás`;
-
-    return new Date(timestamp).toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+    
+    try {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now - date;
+        
+        if (diffMs < 60000) return 'agora';
+        if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}min`;
+        
+        return date.toLocaleTimeString('pt-BR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    } catch {
+        return '';
+    }
 }
 
-// Adicionar mensagem com sincronização de tempo
-function addMessage(platform, user, text, badges = {}, timestamp = null) {
-    const container = document.getElementById('combined-messages');
-    if (!container) return;
-
-    // Limitar número de mensagens
-    if (container.children.length >= 200) {
-        container.removeChild(container.firstChild);
-    }
-
-    // Preparar badges
+function addMessage(data) {
+    const messagesDiv = document.getElementById('messages');
+    if (!messagesDiv) return;
+    
+    const message = document.createElement('div');
+    
+    // Dados da mensagem
+    const platform = data.platform || 'system';
+    const user = escapeHtml(data.data?.user || 'Sistema');
+    const messageText = escapeHtml(data.data?.message || '');
+    const badges = data.data?.badges || {};
+    const timestamp = data.data?.timestamp || new Date().toISOString();
+    
+    // Gerar badges HTML
     let badgesHtml = '';
     if (platform === 'twitch') {
-        if (badges.isBroadcaster) badgesHtml += '<span class="badge broadcaster" title="Broadcaster">👑</span>';
-        if (badges.isModerator) badgesHtml += '<span class="badge mod" title="Moderator">🛡️</span>';
-        if (badges.isVIP) badgesHtml += '<span class="badge vip" title="VIP">⭐</span>';
+        if (badges.isBroadcaster) badgesHtml += '<span class="badge" title="Broadcaster">👑</span>';
+        if (badges.isModerator) badgesHtml += '<span class="badge" title="Mod">🛡️</span>';
+        if (badges.isVIP) badgesHtml += '<span class="badge" title="VIP">⭐</span>';
         if (badges.isSubscriber || badges.isFounder) {
-            badgesHtml += '<span class="badge subscriber" title="Subscriber">💜</span>';
+            badgesHtml += '<span class="badge" title="Subscriber">💜</span>';
         }
     } else if (platform === 'youtube') {
-        if (badges.isOwner) badgesHtml += '<span class="badge owner">👑</span>';
-        if (badges.isModerator) badgesHtml += '<span class="badge mod">🛡️</span>';
-        if (badges.isMember) badgesHtml += '<span class="badge member">⭐</span>';
-        if (badges.isVerified) badgesHtml += '<span class="badge verified">✓</span>';
+        if (badges.isOwner) badgesHtml += '<span class="badge" title="Dono">👑</span>';
+        if (badges.isModerator) badgesHtml += '<span class="badge" title="Mod">🛡️</span>';
+        if (badges.isVerified) badgesHtml += '<span class="badge" title="Verificado">✓</span>';
     }
-
-    // Tempo da mensagem
-    const messageTime = timestamp ? new Date(timestamp) : new Date();
-    const timeDisplay = formatTimeAgo(timestamp);
-    const fullTime = messageTime.toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-
-    // Criar elemento da mensagem
-    const msgEl = document.createElement('div');
-    msgEl.className = `message ${platform}-message`;
-    msgEl.setAttribute('data-time', messageTime.getTime());
-    msgEl.setAttribute('data-platform', platform);
-
-    msgEl.innerHTML = `
+    
+    // Montar mensagem
+    message.className = `message ${platform}-message`;
+    message.innerHTML = `
         <div class="message-header">
-            <span class="message-platform">${platform === 'youtube' ? '🎥' : '🎮'}</span>
-            <span class="message-user">${escapeHtml(user)} ${badgesHtml}</span>
-            <span class="message-time" title="${fullTime}">${timeDisplay}</span>
+            <span class="message-platform">
+                ${platform === 'youtube' ? '🎥' : 
+                  platform === 'twitch' ? '🎮' : '⚙️'}
+            </span>
+            <span class="message-user">${user}</span>
+            ${badgesHtml}
+            <span class="message-time" title="${new Date(timestamp).toLocaleTimeString('pt-BR')}">
+                ${formatTime(timestamp)}
+            </span>
         </div>
-        <div class="message-content">${escapeHtml(text)}</div>
+        <div class="message-content">${messageText}</div>
     `;
-
-    // Inserir em ordem cronológica
-    const messages = Array.from(container.children);
-    const msgTime = messageTime.getTime();
-
-    let inserted = false;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const existingTime = parseInt(messages[i].getAttribute('data-time') || '0');
-        if (msgTime >= existingTime) {
-            if (i === messages.length - 1) {
-                container.appendChild(msgEl);
-            } else {
-                container.insertBefore(msgEl, messages[i + 1]);
-            }
-            inserted = true;
-            break;
-        }
+    
+    // Adicionar ao chat
+    messagesDiv.appendChild(message);
+    
+    // Scroll automático
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    
+    // Limitar mensagens (máximo 200)
+    while (messagesDiv.children.length > 200) {
+        messagesDiv.removeChild(messagesDiv.firstChild);
     }
-
-    if (!inserted) {
-        container.insertBefore(msgEl, container.firstChild);
-    }
-
-    // Scroll para a última mensagem
-    container.scrollTop = container.scrollHeight;
-
-    // Atualizar tempo da última mensagem
-    lastMessageTime = Date.now();
 }
 
-// Conectar ao servidor SSE
-function connectToServer() {
-    console.log('🔗 Conectando ao servidor SSE...');
-
-    if (eventSource) {
-        eventSource.close();
+// Atualizar status
+function updateStatus(service, status) {
+    const element = document.getElementById(`${service}-status`);
+    if (element) {
+        element.className = `status-dot ${status}`;
     }
+}
 
-    const sseUrl = `${CONFIG.serverUrl}/events`;
-    console.log('🎯 SSE URL:', sseUrl);
-
-    eventSource = new EventSource(sseUrl);
-
-    eventSource.onopen = () => {
-        console.log('✅ Conexão SSE aberta');
+// Conectar WebSocket
+function connectWebSocket() {
+    if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+    }
+    
+    console.log('🔗 Conectando ao WebSocket...');
+    updateStatus('ws', 'connecting');
+    document.getElementById('ws-text').textContent = 'Conectando...';
+    
+    // Criar conexão
+    ws = new WebSocket(CONFIG.serverUrl);
+    
+    ws.onopen = () => {
+        console.log('✅ WebSocket conectado');
+        updateStatus('ws', 'connected');
+        document.getElementById('ws-text').textContent = 'Conectado';
         reconnectAttempts = 0;
-        addMessage('system', 'Sistema', '🔗 Conectado ao servidor...');
+        
+        addMessage({
+            platform: 'system',
+            data: {
+                user: 'Sistema',
+                message: 'Conectado ao servidor'
+            }
+        });
     };
-
-    eventSource.onmessage = (event) => {
+    
+    ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-
-            switch (data.type) {
+            
+            switch (data.platform) {
                 case 'youtube':
-                    console.log(`🎥 YouTube: ${data.data.user}`);
-                    addMessage(
-                        'youtube',
-                        data.data.user,
-                        data.data.message,
-                        data.data.badges,
-                        data.data.timestamp || data.data.serverTime
-                    );
+                    updateStatus('youtube', 'connected');
                     break;
-
+                case 'twitch':
+                    updateStatus('twitch', 'connected');
+                    break;
                 case 'system':
-                    console.log(`📢 Sistema: ${data.data.message}`);
-                    addMessage('system', 'Sistema', data.data.message, {}, data.data.timestamp);
-
-                    // Mostrar informações de quota se disponível
-                    if (data.data.quota !== undefined) {
-                        console.log(`💰 Quota: ${data.data.quota} unidades`);
-                    }
-                    break;
-
-                case 'welcome':
-                    console.log('👋 Bem-vindo:', data.data.message);
-                    addMessage('system', 'Sistema', data.data.message);
-
-                    // Mostrar informações do sistema
-                    if (data.data.settings) {
-                        console.log('⚙️ Configurações:', data.data.settings);
+                    if (data.type === 'welcome') {
+                        console.log('👋 ', data.data.message);
                     }
                     break;
             }
+            
+            addMessage(data);
         } catch (error) {
-            console.error('❌ Erro ao processar evento:', error);
+            console.error('❌ Erro ao processar mensagem:', error);
         }
     };
-
-    eventSource.onerror = (error) => {
-        console.error('❌ Erro SSE:', error);
-
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-
+    
+    ws.onerror = (error) => {
+        console.error('❌ Erro WebSocket:', error);
+    };
+    
+    ws.onclose = () => {
+        console.log('🔌 WebSocket desconectado');
+        updateStatus('ws', 'disconnected');
+        document.getElementById('ws-text').textContent = 'Desconectado';
+        
+        // Reconexão com backoff exponencial
         reconnectAttempts++;
-        const delay = Math.min(10000, reconnectAttempts * 2000);
-        console.log(`🔄 Reconectando em ${delay}ms...`);
-
-        setTimeout(connectToServer, delay);
+        const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+        
+        console.log(`🔄 Reconectando em ${delay/1000}s...`);
+        
+        reconnectTimeout = setTimeout(() => {
+            connectWebSocket();
+        }, delay);
     };
 }
 
-// Função para testar mensagem (desenvolvimento)
-window.sendTestMessage = function () {
-    fetch(`${CONFIG.serverUrl}/test-message`)
-        .then(res => res.json())
-        .then(data => {
-            console.log('✅ Mensagem de teste enviada:', data);
-        })
-        .catch(err => {
-            console.error('❌ Erro ao enviar teste:', err);
-        });
-};
-
-// Funções globais
-window.clearChat = function () {
-    const container = document.getElementById('combined-messages');
-    if (container) {
-        container.innerHTML = '';
-        addMessage('system', 'Sistema', 'Chat limpo');
-    }
-};
-
-window.showStatus = function () {
-    fetch(`${CONFIG.serverUrl}/status`)
-        .then(res => res.json())
-        .then(data => {
-            console.log('📊 Status do sistema:', data);
-            alert(`Status:\nYouTube: ${data.youtube.isLive ? 'LIVE' : 'OFFLINE'}\nQuota: ${data.quota.percentUsed}\nClientes: ${data.system.clients}`);
-        })
-        .catch(err => {
-            console.error('❌ Erro ao buscar status:', err);
-        });
-};
-
 // Inicialização
-window.onload = function () {
-    console.log('🚀 Página carregada');
-    console.log('⚙️ CONFIG:', CONFIG);
-
-    // Adicionar controles de teste se for localhost
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        const controls = document.createElement('div');
-        controls.style.cssText = `
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            z-index: 1000;
-        `;
-        controls.innerHTML = `
-            <button onclick="sendTestMessage()" style="margin: 2px;">Testar Mensagem</button>
-            <button onclick="clearChat()" style="margin: 2px;">Limpar Chat</button>
-            <button onclick="showStatus()" style="margin: 2px;">Status</button>
-        `;
-        document.body.appendChild(controls);
-    }
-
-    addMessage('system', 'Sistema', '💬 Chat OBS iniciado');
-    addMessage('system', 'Sistema', `📺 Twitch: ${CONFIG.twitchChannel}`);
-    addMessage('system', 'Sistema', '🎥 YouTube: Conectando...');
-
-    connectToServer();
-    // connectTwitch(); // Comente se não quiser Twitch por enquanto
+window.onload = function() {
+    console.log('🚀 Inicializando chat OBS...');
+    console.log('⚙️ Config:', CONFIG);
+    
+    // Adicionar mensagem inicial
+    addMessage({
+        platform: 'system',
+        data: {
+            user: 'Sistema',
+            message: '💬 Chat OBS inicializado'
+        }
+    });
+    
+    // Iniciar conexão
+    connectWebSocket();
+    
+    // Testar conexão periodicamente
+    setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+        }
+    }, 30000);
 };
-
-// Reconexão automática
-setInterval(() => {
-    if (eventSource && (eventSource.readyState === EventSource.CLOSED || eventSource.readyState === 2)) {
-        console.log('🔁 Reconectando SSE...');
-        connectToServer();
-    }
-}, 15000);

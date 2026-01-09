@@ -11,3 +11,9 @@ services:
         value: funilzinha
       - key: YOUTUBE_CHANNEL_ID
         value: UC5ooSCrMhz10WUWrc6IlT3Q
+      - key: YOUTUBE_API_KEY
+        sync: false 
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
