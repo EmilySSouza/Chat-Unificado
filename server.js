@@ -1,25 +1,23 @@
 const express = require('express');
 const { LiveChat } = require('youtube-chat');
+const fetch = require('node-fetch'); // ADICIONE ESTA DEPENDÊNCIA
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const CONFIG = {
     twitchChannel: process.env.TWITCH_CHANNEL || "funilzinha",
-    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UC5ooSCrMhz10WUWrc6IlT3Q"
+    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UC5ooSCrMhz10WUWrc6IlT3Q",
+    youtubeVideoId: process.env.YOUTUBE_VIDEO_ID || null // NOVO: videoId específico
 };
 
 // Middleware CORS
 app.use((req, res, next) => {
-    const allowedOrigins = [
-        'https://chat-unificado.onrender.com',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000'
-    ];
-
     const origin = req.headers.origin;
-    if (allowedOrigins.includes(origin)) {
+    if (origin) {
         res.header('Access-Control-Allow-Origin', origin);
+    } else {
+        res.header('Access-Control-Allow-Origin', '*');
     }
 
     res.header('Access-Control-Allow-Headers',
@@ -37,42 +35,86 @@ app.use((req, res, next) => {
 app.use(express.static(__dirname));
 
 let youtubeChat = null;
-let isYouTubeLive = false; // NOVO: flag para controlar estado
+let isYouTubeLive = false;
 const clients = [];
 
-// FUNÇÃO PRINCIPAL DE CONEXÃO - CORRIGIDA
+// FUNÇÃO PARA BUSCAR VIDEO ID DA LIVE ATUAL
+async function getCurrentLiveVideoId() {
+    try {
+        console.log('🔍 Buscando live ativa do canal...');
+
+        // Método 1: Tenta usar videoId da variável de ambiente (se existir)
+        if (CONFIG.youtubeVideoId) {
+            console.log(`🎯 Usando videoId da variável: ${CONFIG.youtubeVideoId}`);
+            return CONFIG.youtubeVideoId;
+        }
+
+        // Método 2: Tenta encontrar via página do YouTube
+        const response = await fetch(`https://www.youtube.com/channel/${CONFIG.youtubeChannelId}/live`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            },
+            timeout: 10000
+        });
+
+        const html = await response.text();
+
+        // Procura o videoId na página
+        const videoIdMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/) ||
+            html.match(/watch\?v=([a-zA-Z0-9_-]{11})/) ||
+            html.match(/"embed":{"videoId":"([a-zA-Z0-9_-]{11})"/);
+
+        if (videoIdMatch && videoIdMatch[1]) {
+            const videoId = videoIdMatch[1];
+            console.log(`✅ VideoId encontrado: ${videoId}`);
+            return videoId;
+        }
+
+        console.log('❌ Nenhum videoId encontrado na página');
+        return null;
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar videoId:', error.message);
+        return null;
+    }
+}
+
+// FUNÇÃO PRINCIPAL DE CONEXÃO - USANDO VIDEO ID
 async function connectYouTube() {
     try {
         console.log('🔄 Conectando ao YouTube...');
 
-        // Para conexão anterior se existir
+        // Para conexão anterior
         if (youtubeChat) {
             try {
                 youtubeChat.stop();
-                console.log('🔌 Conexão anterior encerrada');
-            } catch (e) {
-                // Ignora
-            }
+            } catch (e) { }
         }
 
-        // Reseta flag
-        isYouTubeLive = false;
+        // Busca o videoId da live atual
+        const videoId = await getCurrentLiveVideoId();
 
-        console.log(`📺 Usando channelId: ${CONFIG.youtubeChannelId}`);
+        if (!videoId) {
+            console.log('⏳ Nenhuma live ativa encontrada');
+            isYouTubeLive = false;
+
+            // Tenta novamente em 2 minutos
+            setTimeout(connectYouTube, 120000);
+            return;
+        }
+
+        console.log(`🎬 Conectando usando videoId: ${videoId}`);
+
+        // NOVA ABORDAGEM: Usa videoId em vez de channelId
         youtubeChat = new LiveChat({
-            channelId: CONFIG.youtubeChannelId,
-            pollingInterval: 5000 // Aumentei para 5 segundos
+            videoId: videoId, // ← USA VIDEO ID!
+            pollingInterval: 3000
         });
 
-        // Configura eventos
+        // Configura eventos (igual ao anterior)
         youtubeChat.on('chat', (message) => {
             try {
-                // Só processa mensagens se estiver em live
-                if (!isYouTubeLive) {
-                    console.log('⚠️ Mensagem recebida mas isYouTubeLive = false');
-                    return;
-                }
-
                 let messageText = '';
 
                 if (typeof message.message === 'string') {
@@ -82,24 +124,16 @@ async function connectYouTube() {
                         .map(item => item.text || '')
                         .filter(text => text)
                         .join(' ');
-                } else if (message.text) {
-                    messageText = message.text;
                 }
 
-                const userName = message.author?.name ||
-                    message.author?.displayName ||
-                    'Anônimo';
-
-                console.log(`📩 YouTube: ${userName}: ${messageText.substring(0, 50)}...`);
+                const userName = message.author?.name || 'Anônimo';
 
                 broadcast({
                     type: 'youtube',
                     data: {
                         user: userName,
                         message: messageText,
-                        time: message.timestamp ?
-                            new Date(message.timestamp).toLocaleTimeString('pt-BR') :
-                            new Date().toLocaleTimeString('pt-BR'),
+                        time: new Date().toLocaleTimeString('pt-BR'),
                         badges: {
                             isMember: message.isMembership || message.isMember,
                             isModerator: message.isModerator,
@@ -113,136 +147,62 @@ async function connectYouTube() {
             }
         });
 
-        youtubeChat.on('start', (liveInfo) => {
+        youtubeChat.on('start', () => {
             console.log('✅ YouTube: Conectado ao chat!');
-            if (liveInfo) {
-                console.log(`   Live Info: ${liveInfo}`);
-            }
-
-            // MARCA COMO LIVE ATIVA
             isYouTubeLive = true;
 
             broadcast({
                 type: 'system',
-                data: '✅ YouTube: Conectado à transmissão ao vivo!'
+                data: '✅ YouTube: Conectado à transmissão!'
             });
         });
 
         youtubeChat.on('end', () => {
             console.log('🔴 YouTube: Chat encerrado');
-            isYouTubeLive = false; // MARCA COMO NÃO LIVE
+            isYouTubeLive = false;
 
             broadcast({
                 type: 'system',
                 data: '🔴 YouTube: Transmissão encerrada'
             });
 
-            // Se ainda estivermos no servidor, aguarda 30s e tenta novamente
-            setTimeout(() => {
-                if (!isYouTubeLive) {
-                    console.log('🔄 Tentando reconectar após encerramento...');
-                    connectYouTube();
-                }
-            }, 30000);
+            setTimeout(connectYouTube, 30000);
         });
 
         youtubeChat.on('error', (error) => {
-            console.error('❌ YouTube Erro:', error.message || error);
+            console.error('❌ YouTube Erro:', error.message);
 
-            // Verifica se é erro "no live stream"
-            if (error.message.includes('No live stream') ||
-                error.message.includes('not found') ||
-                error.message.includes('No active live')) {
-
-                console.log('⏳ YouTube: Nenhuma transmissão ativa no momento');
+            // Se for "not found", tenta buscar novo videoId
+            if (error.message.includes('not found') ||
+                error.message.includes('Live Stream was not found')) {
+                console.log('🔄 Live não encontrada, buscando nova...');
                 isYouTubeLive = false;
-
-                // NÃO ENVIA MENSAGEM PARA O CHAT - apenas log
-                // broadcast({ 
-                //     type: 'system', 
-                //     data: '⏳ YouTube: Aguardando início da transmissão...' 
-                // });
-
-                // Tenta reconectar em 60 segundos
                 setTimeout(connectYouTube, 60000);
-
-            } else if (error.message.includes('ended')) {
-                console.log('🔴 YouTube: Transmissão foi encerrada');
-                isYouTubeLive = false;
-                broadcast({
-                    type: 'system',
-                    data: '🔴 YouTube: Transmissão encerrada'
-                });
-                setTimeout(connectYouTube, 30000);
-
-            } else {
-                // Outros erros
-                console.log('🔄 YouTube: Erro genérico, reconectando em 30s');
-                setTimeout(connectYouTube, 30000);
             }
         });
 
-        // NOVO EVENTO: Quando recebe dados da live
-        youtubeChat.on('metadata', (metadata) => {
-            console.log('📊 YouTube Metadata recebida');
-            if (metadata && metadata.isLive) {
-                isYouTubeLive = true;
-                console.log('✅ YouTube: Metadata confirma LIVE ATIVA');
-            }
-        });
-
-        // Inicia a conexão
         await youtubeChat.start();
-        console.log('🎉 Conexão YouTube iniciada!');
+        console.log('🎉 Conexão YouTube iniciada com sucesso!');
 
     } catch (error) {
-        console.error('💥 Erro crítico ao conectar:', error.message);
+        console.error('💥 Erro ao conectar:', error.message);
 
-        // Tipos específicos de erro
-        if (error.message.includes('No live stream') ||
-            error.message.includes('not found')) {
-            console.log('⏳ Nenhuma live ativa no momento');
-            // NÃO envia mensagem para o chat
-        } else {
-            broadcast({
-                type: 'system',
-                data: '⚠️ YouTube: Erro de conexão'
-            });
-        }
-
-        // Tenta novamente em 60 segundos
+        // Tenta novamente em 1 minuto
         setTimeout(connectYouTube, 60000);
     }
 }
 
-// FUNÇÃO PARA TRANSMITIR PARA CLIENTES SSE
+// Função broadcast (mantenha igual)
 function broadcast(data) {
-    // FILTRO: Não envia certas mensagens repetitivas
-    const skipMessages = [
-        'Aguardando início da transmissão',
-        'Aguardando transmissão',
-        'Nenhuma transmissão ativa'
-    ];
-
-    const messageText = typeof data.data === 'string' ? data.data : '';
-
-    if (skipMessages.some(msg => messageText.includes(msg))) {
-        console.log(`🚫 Pulando mensagem: ${messageText}`);
-        return;
-    }
-
     const sseMessage = `data: ${JSON.stringify(data)}\n\n`;
-
     clients.forEach(client => {
         try {
             client.write(sseMessage);
-        } catch (error) {
-            // Ignora clientes desconectados
-        }
+        } catch (error) { }
     });
 }
 
-// ROTA SSE (Server-Sent Events)
+// ROTAS
 app.get('/events', (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -253,103 +213,75 @@ app.get('/events', (req, res) => {
 
     clients.push(res);
 
-    // Mensagem de boas-vindas personalizada
-    const welcomeMsg = {
+    res.write(`data: ${JSON.stringify({
         type: 'welcome',
         data: {
-            message: '💬 Chat Unificado iniciado',
-            youtubeChannel: CONFIG.youtubeChannelId,
-            twitchChannel: CONFIG.twitchChannel,
-            youtubeStatus: isYouTubeLive ? '🔴 EM LIVE' : '⏳ Aguardando',
+            message: '💬 Chat Unificado',
+            youtubeLive: isYouTubeLive,
             timestamp: new Date().toLocaleTimeString('pt-BR')
         }
-    };
-
-    res.write(`data: ${JSON.stringify(welcomeMsg)}\n\n`);
-
-    // Envia status atual
-    if (isYouTubeLive) {
-        res.write(`data: ${JSON.stringify({
-            type: 'system',
-            data: '✅ YouTube: Conectado à transmissão ao vivo'
-        })}\n\n`);
-    }
+    })}\n\n`);
 
     req.on('close', () => {
         const index = clients.indexOf(res);
         if (index > -1) clients.splice(index, 1);
-        console.log(`👤 Cliente desconectado. Restantes: ${clients.length}`);
     });
 });
 
-// ROTAS (mantenha as mesmas)
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
 
 app.get('/config.js', (req, res) => {
-    // Detecta se está no Render ou local
-    const isRender = req.hostname.includes('onrender.com');
-    const protocol = isRender ? 'https' : req.protocol;
-    const serverUrl = `${protocol}://${req.get('host')}`;
-
     const config = `
 const CONFIG = {
     twitchChannel: "${CONFIG.twitchChannel}",
-    serverUrl: "${serverUrl}",  // ← DINÂMICO!
+    serverUrl: "${req.protocol}://${req.get('host')}",
     youtubeChannelId: "${CONFIG.youtubeChannelId}"
 };
-// DEBUG INFO:
-console.log('🌐 Ambiente:', '${isRender ? 'Render' : 'Local'}');
-console.log('🔗 Server URL:', '${serverUrl}');
     `;
-
     res.header('Content-Type', 'application/javascript');
     res.send(config);
 });
 
-app.get('/debug', (req, res) => {
+app.get('/health', (req, res) => {
     res.json({
-        environment: process.env.NODE_ENV || 'development',
-        hostname: req.hostname,
-        protocol: req.protocol,
-        headers: {
-            host: req.get('host'),
-            origin: req.get('origin'),
-            referer: req.get('referer')
-        },
-        serverUrl: `${req.protocol}://${req.get('host')}`,
-        isRender: req.hostname.includes('onrender.com'),
-        config: CONFIG
+        status: 'healthy',
+        youtube: !!youtubeChat,
+        youtubeLive: isYouTubeLive,
+        clients: clients.length,
+        timestamp: new Date().toISOString()
     });
 });
 
+// NOVA ROTA: Atualizar videoId manualmente
+app.get('/update-video-id/:videoId', (req, res) => {
+    const videoId = req.params.videoId;
+    console.log(`🔄 VideoId atualizado manualmente: ${videoId}`);
 
-// ROTA PARA STATUS DETALHADO
-app.get('/status', (req, res) => {
+    // Reconecta com novo videoId
+    if (youtubeChat) {
+        youtubeChat.stop();
+    }
+
+    // Usa o novo videoId
+    CONFIG.youtubeVideoId = videoId;
+
+    // Reconecta
+    setTimeout(connectYouTube, 1000);
+
     res.json({
-        youtube: {
-            connected: !!youtubeChat,
-            isLive: isYouTubeLive,
-            channelId: CONFIG.youtubeChannelId
-        },
-        twitch: {
-            channel: CONFIG.twitchChannel
-        },
-        server: {
-            clients: clients.length,
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString()
-        }
+        success: true,
+        message: `VideoId atualizado para: ${videoId}`,
+        reconnecting: true
     });
 });
 
-// INICIA O SERVIDOR
 app.listen(PORT, () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`🌐 Ambiente: ${process.env.RENDER ? 'Render' : 'Local'}`);
     console.log(`📺 Twitch: ${CONFIG.twitchChannel}`);
     console.log(`🎥 YouTube: ${CONFIG.youtubeChannelId}`);
+    console.log('🔄 Iniciando conexão YouTube...');
 
     connectYouTube();
 });
