@@ -1,3 +1,27 @@
+(function() {
+    // Fallback automático para Render
+    if (window.location.hostname.includes('onrender.com') && 
+        typeof CONFIG === 'undefined') {
+        console.log('🌐 Detectado Render, configurando automaticamente...');
+        window.CONFIG = {
+            twitchChannel: "funilzinha",
+            serverUrl: "https://chat-unificado.onrender.com",
+            youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
+        };
+    }
+    
+    // Fallback para desenvolvimento local
+    if (window.location.hostname === 'localhost' && 
+        typeof CONFIG === 'undefined') {
+        console.log('💻 Modo local, configurando...');
+        window.CONFIG = {
+            twitchChannel: "funilzinha",
+            serverUrl: "http://localhost:3000",
+            youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
+        };
+    }
+})();
+
 let eventSource = null;
 let twitchSocket = null;
 let reconnectAttempts = 0;

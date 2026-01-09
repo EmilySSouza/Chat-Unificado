@@ -11,6 +11,7 @@ services:
         value: funilzinha
       - key: YOUTUBE_CHANNEL_ID
         value: UC5ooSCrMhz10WUWrc6IlT3Q
-    autoDeploy: true
+      - key: NODE_ENV
+        value: production
     healthCheckPath: /health
-    initialDelay: 60
+    initialDelay: 120
