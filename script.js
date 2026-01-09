@@ -11,7 +11,7 @@ if (typeof CONFIG === 'undefined') {
     window.CONFIG = {
         twitchChannel: "funilzinha",
         serverUrl: "http://localhost:3000",
-        youtubeChannelId: "UCyDXAG7yWP9SJGpXUDfBuCg"
+        youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
     };
 }
 

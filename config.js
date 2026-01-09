@@ -1,5 +1,5 @@
 const CONFIG = {
     twitchChannel: "funilzinha",
     serverUrl: "https://chat-unificado.onrender.com", 
-    youtubeChannelId: "UCyDXAG7yWP9SJGpXUDfBuCg"
+    youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
 };

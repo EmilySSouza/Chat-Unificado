@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 const CONFIG = {
     twitchChannel: process.env.TWITCH_CHANNEL || "funilzinha",
-    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UCyDXAG7yWP9SJGpXUDfBuCg"
+    youtubeChannelId: process.env.YOUTUBE_CHANNEL_ID || "UC5ooSCrMhz10WUWrc6IlT3Q"
 };
 
 app.use((req, res, next) => {

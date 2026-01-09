@@ -10,4 +10,4 @@ services:
       - key: TWITCH_CHANNEL
         value: funilzinha
       - key: YOUTUBE_CHANNEL_ID
-        value: UCyDXAG7yWP9SJGpXUDfBuCg
+        value: UC5ooSCrMhz10WUWrc6IlT3Q
