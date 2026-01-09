@@ -34,31 +34,31 @@ function addMessage(platform, user, text, badges = {}) {
         console.error('❌ Container não encontrado!');
         return;
     }
-    
+
     // Limita mensagens
     if (container.children.length >= 200) {
         container.removeChild(container.firstChild);
     }
-    
+
     // Cria badges HTML
     let badgesHtml = '';
     if (badges.isOwner) badgesHtml += '<span class="badge owner">👑</span>';
     if (badges.isModerator) badgesHtml += '<span class="badge mod">🛡️</span>';
     if (badges.isMember) badgesHtml += '<span class="badge member">⭐</span>';
-    
+
     const msgEl = document.createElement('div');
     msgEl.className = `message ${platform}-message`;
     msgEl.innerHTML = `
         <div class="message-header">
             <span class="message-user">${user} ${badgesHtml}</span>
-            <span class="message-time">${new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>
+            <span class="message-time">${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
         <div class="message-content">${escapeHtml(text)}</div>
     `;
-    
+
     container.appendChild(msgEl);
     container.scrollTop = container.scrollHeight;
-    
+
     console.log(`💬 ${platform.toUpperCase()}: ${user}: ${text}`);
 }
 
@@ -66,76 +66,106 @@ function addMessage(platform, user, text, badges = {}) {
 
 function connectToServer() {
     console.log('🔗 Conectando ao servidor...');
-    
+
     // Fecha conexão anterior se existir
     if (eventSource) {
         eventSource.close();
         eventSource = null;
     }
-    
-    // Cria nova conexão
-    eventSource = new EventSource(`${CONFIG.serverUrl}/events`);
-    
-    eventSource.onopen = () => {
-        console.log('✅ Conectado ao servidor!');
-        reconnectAttempts = 0;
-        addMessage('system', 'Sistema', 'Servidor conectado');
-    };
-    
-    eventSource.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            console.log('📩 Evento recebido:', data.type);
-            
-            switch (data.type) {
-                case 'youtube':
-                    addMessage(
-                        'youtube', 
-                        data.data.user, 
-                        data.data.message,
-                        data.data.badges
-                    );
-                    break;
-                    
-                case 'system':
-                    addMessage('system', 'Sistema', data.data);
-                    break;
-                    
-                case 'welcome':
-                    console.log('Mensagem de boas-vindas:', data.data);
-                    break;
+
+    const serverUrl = CONFIG.serverUrl.replace(/\/$/, ''); // Remove barra final se existir
+    const eventSourceUrl = `${serverUrl}/events`;
+
+    console.log(`📡 URL do EventSource: ${eventSourceUrl}`);
+
+    try {
+        eventSource = new EventSource(eventSourceUrl);
+
+        eventSource.onopen = () => {
+            console.log('✅ Conectado ao servidor SSE!');
+            reconnectAttempts = 0;
+            addMessage('system', 'Sistema', '✅ Servidor conectado');
+        };
+
+        eventSource.onmessage = (event) => {
+            try {
+                console.log('📩 Dados brutos recebidos:', event.data);
+
+                // Ignora heartbeat
+                if (event.data === ': heartbeat') {
+                    return;
+                }
+
+                const data = JSON.parse(event.data);
+                console.log('📊 Evento processado:', data.type, data.data);
+
+                switch (data.type) {
+                    case 'youtube':
+                        addMessage(
+                            'youtube',
+                            data.data.user || 'YouTube',
+                            data.data.message || '',
+                            data.data.badges || {}
+                        );
+                        break;
+
+                    case 'system':
+                        addMessage('system', 'Sistema', data.data || 'Mensagem do sistema');
+                        break;
+
+                    case 'welcome':
+                        console.log('👋 Boas-vindas:', data.data);
+                        addMessage('system', 'Sistema', `✅ ${data.data.message || 'Conectado'}`);
+                        break;
+
+                    case 'test':
+                        console.log('🧪 Teste recebido:', data.data);
+                        addMessage('system', 'Sistema', `🧪 ${data.data}`);
+                        break;
+
+                    default:
+                        console.log('ℹ️ Evento desconhecido:', data.type);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao processar evento:', error, 'Dados:', event.data);
             }
-        } catch (error) {
-            console.error('❌ Erro ao processar evento:', error);
-        }
-    };
-    
-    eventSource.onerror = (error) => {
-        console.error('❌ Erro na conexão:', error);
-        if (eventSource) {
-            eventSource.close();
-        }
-        
-        reconnectAttempts++;
-        const delay = Math.min(5000, reconnectAttempts * 1000);
-        
-        console.log(`🔄 Reconectando em ${delay/1000}s...`);
-        setTimeout(connectToServer, delay);
-    };
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('❌ Erro na conexão SSE:', error);
+            console.log('📡 Estado da conexão:', eventSource.readyState);
+
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            reconnectAttempts++;
+            const delay = Math.min(5000, reconnectAttempts * 1000);
+
+            console.log(`🔄 Reconectando em ${delay / 1000}s... (tentativa ${reconnectAttempts})`);
+            addMessage('system', 'Sistema', `🔄 Reconectando... (${reconnectAttempts})`);
+
+            setTimeout(connectToServer, delay);
+        };
+
+    } catch (error) {
+        console.error('💥 Erro ao criar EventSource:', error);
+        setTimeout(connectToServer, 3000);
+    }
 }
 
 // ==================== TWITCH ====================
 
 function connectTwitch() {
     console.log('🎮 Conectando Twitch...');
-    
+
     // Fecha conexão anterior
     if (twitchSocket && twitchSocket.readyState === WebSocket.OPEN) {
         twitchSocket.close();
     }
-    
+
     twitchSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-    
+
     twitchSocket.onopen = () => {
         console.log('✅ Twitch conectado!');
         twitchSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
@@ -143,15 +173,15 @@ function connectTwitch() {
         twitchSocket.send(`JOIN #${CONFIG.twitchChannel.toLowerCase()}`);
         addMessage('system', 'Sistema', 'Twitch conectado');
     };
-    
+
     twitchSocket.onmessage = (event) => {
         const msg = event.data;
-        
+
         if (msg.includes('PING')) {
             twitchSocket.send('PONG :tmi.twitch.tv');
             return;
         }
-        
+
         if (msg.includes('PRIVMSG')) {
             try {
                 const parts = msg.split(';');
@@ -160,12 +190,12 @@ function connectTwitch() {
                     const [key, ...value] = part.split('=');
                     if (key) tags[key] = value.join('=');
                 });
-                
+
                 const match = msg.match(/:(.*)!(.*) PRIVMSG #(.*) :(.*)/);
                 if (match) {
                     const username = tags['display-name'] || match[1];
                     const message = match[4];
-                    
+
                     addMessage('twitch', username, message);
                 }
             } catch (error) {
@@ -173,12 +203,12 @@ function connectTwitch() {
             }
         }
     };
-    
+
     twitchSocket.onclose = () => {
         console.log('🔄 Reconectando Twitch...');
         setTimeout(connectTwitch, 5000);
     };
-    
+
     twitchSocket.onerror = (error) => {
         console.error('❌ Erro Twitch:', error);
     };
@@ -186,7 +216,7 @@ function connectTwitch() {
 
 // ==================== FUNÇÕES GLOBAIS ====================
 
-window.testServer = async function() {
+window.testServer = async function () {
     try {
         const response = await fetch('https://chat-unificado.onrender.com/test');
         const data = await response.json();
@@ -198,7 +228,7 @@ window.testServer = async function() {
     }
 };
 
-window.clearChat = function() {
+window.clearChat = function () {
     const container = document.getElementById('combined-messages');
     if (container) {
         container.innerHTML = '';
@@ -208,19 +238,19 @@ window.clearChat = function() {
 
 // ==================== INICIALIZAÇÃO ====================
 
-window.onload = function() {
+window.onload = function () {
     console.log('🚀 Chat OBS - Iniciando...');
     console.log('⚙️ Config:', CONFIG);
-    
+
     // Mensagem inicial
     addMessage('system', 'Sistema', '💬 Chat OBS iniciado');
     addMessage('system', 'Sistema', `📺 Twitch: ${CONFIG.twitchChannel}`);
     addMessage('system', 'Sistema', '🎥 YouTube: Conectando...');
-    
+
     // Conecta aos serviços
     connectToServer();
     connectTwitch();
-    
+
     console.log('✅ Sistema pronto!');
 };
 
@@ -232,7 +262,7 @@ setInterval(() => {
         console.log('🔄 Reconectando EventSource...');
         connectToServer();
     }
-    
+
     if (twitchSocket && twitchSocket.readyState === WebSocket.CLOSED) {
         console.log('🔄 Reconectando Twitch...');
         connectTwitch();
