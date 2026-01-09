@@ -45,7 +45,7 @@ async function connectYouTube() {
         console.log(`📺 Usando channelId: ${CONFIG.youtubeChannelId}`);
         
         youtubeChat = new LiveChat({
-            channelId: CONFIG.youtubeChannelId  // APENAS channelId, SEM videoId!
+            liveId: "nZx2C80T284"  // APENAS channelId, SEM videoId!
         });
         
         // Eventos conforme documentação
