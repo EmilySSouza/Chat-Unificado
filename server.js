@@ -1,6 +1,5 @@
 const express = require('express');
 const { LiveChat } = require('youtube-chat');
-const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,8 +22,6 @@ const clients = [];
 
 async function connectYouTube() {
     try {
-        console.log('🎯 Conectando ao YouTube...');
-
         if (youtubeChat) {
             youtubeChat.stop();
         }
@@ -34,8 +31,6 @@ async function connectYouTube() {
         });
 
         youtubeChat.on('chat', (data) => {
-            console.log(`📨 ${data.author.name}: ${data.message[0]?.text || ''}`);
-
             broadcast({
                 type: 'youtube',
                 data: {
@@ -52,7 +47,6 @@ async function connectYouTube() {
         });
 
         youtubeChat.on('start', () => {
-            console.log('✅ YouTube Chat conectado!');
             broadcast({ type: 'system', data: 'YouTube: Conectado!' });
         });
 
@@ -110,7 +104,6 @@ const CONFIG = {
     serverUrl: "${req.protocol}://${req.get('host')}",
     youtubeChannelId: "${CONFIG.youtubeChannelId}"
 };
-console.log('⚙️ Config Render:', CONFIG);
     `;
 
     res.header('Content-Type', 'application/javascript');
@@ -127,11 +120,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, async () => {
-    console.log('='.repeat(50));
-    console.log(`🚀 Servidor Render rodando na porta ${PORT}`);
-    console.log(`📺 Twitch: ${CONFIG.twitchChannel}`);
-    console.log(`🎥 YouTube: ${CONFIG.youtubeChannelId}`);
-    console.log('='.repeat(50));
-
     await connectYouTube();
 });

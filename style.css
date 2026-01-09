@@ -38,6 +38,7 @@ body {
     background: linear-gradient(90deg, #9146ff, #ff0000);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    align-items: center;
 }
 
 .status-indicators {
@@ -108,11 +109,10 @@ body {
 }
 
 .chat-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    height: 100vh;
+    display: block;
+    height: 80vh;
     min-height: 600px;
+    gap: 20px;
 }
 
 .chat-box {
@@ -123,7 +123,7 @@ body {
     flex-direction: column;
     border: 1px solid #2d2d30;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    height: 100vw;
+    height: 100%;
 }
 
 .chat-header {
@@ -147,6 +147,12 @@ body {
     border-bottom-color: #ff0000;
 }
 
+#combined-chat .chat-header {
+    background: linear-gradient(90deg, #9146ff, #ff0000);
+    color: white;
+    border-bottom-color: #333;
+}
+
 .chat-header::before {
     content: "●";
     font-size: 20px;
@@ -163,7 +169,6 @@ body {
 .messages {
     flex: 1;
     padding: 15px;
-    height: 100vh;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -191,27 +196,15 @@ body {
 
 .message {
     padding: 12px 15px;
-    background: linear-gradient(135deg, #252529, #1e1e22);
     border-radius: 8px;
     border-left: 4px solid;
     animation: fadeIn 0.3s ease-out;
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, background 0.2s ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .message:hover {
     transform: translateX(5px);
-    background: linear-gradient(135deg, #2a2a2e, #232327);
-}
-
-.twitch-message {
-    border-left-color: #9146ff;
-    border-left-width: 4px;
-}
-
-.youtube-message {
-    border-left-color: #ff0000;
-    border-left-width: 4px;
 }
 
 @keyframes fadeIn {
@@ -226,18 +219,39 @@ body {
     }
 }
 
+.twitch-message {
+    border-left-color: #9146ff;
+    background: linear-gradient(135deg, rgba(145, 70, 255, 0.1), #252529);
+}
+
+.twitch-message:hover {
+    background: linear-gradient(135deg, rgba(145, 70, 255, 0.15), #2a2a2e);
+}
+
+.youtube-message {
+    border-left-color: #ff0000;
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.1), #252529);
+}
+
+.youtube-message:hover {
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.15), #2a2a2e);
+}
+
 .message-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 6px;
     font-size: 13px;
+    min-height: 22px;
 }
 
 .message-user {
     font-weight: 700;
     display: flex;
     align-items: center;
+    flex-grow: 1;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
@@ -249,17 +263,97 @@ body {
     color: #ff6666;
 }
 
-.user-badge {
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.1);
+.platform-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.twitch-indicator {
+    background: #9146ff;
+    box-shadow: 0 0 5px #9146ff;
+}
+
+.youtube-indicator {
+    background: #ff0000;
+    box-shadow: 0 0 5px #ff0000;
+}
+
+.badge {
+    display: inline-block;
+    margin-right: 3px;
+    font-size: 0.9em;
+    vertical-align: middle;
+}
+
+.badge-icon {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+    margin-right: 4px;
+    margin-bottom: 2px;
+    display: inline-block;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    border-radius: 2px;
+}
+
+.badge.broadcaster {
+    color: #9146FF;
+    background: rgba(145, 70, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.mod {
+    color: #00AD03;
+    background: rgba(0, 173, 3, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.vip {
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.subscriber {
+    color: #BF94FF;
+    background: rgba(191, 148, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+[title="broadcaster"] {
+    box-shadow: 0 0 3px rgba(145, 70, 255, 0.5);
+}
+
+[title="moderator"] {
+    box-shadow: 0 0 3px rgba(0, 173, 3, 0.5);
+}
+
+[title="subscriber"] {
+    box-shadow: 0 0 3px rgba(191, 148, 255, 0.5);
+}
+
+.username {
+    margin-right: 5px;
+    font-weight: 600;
+}
+
+.twitch-message .username {
+    color: #9146FF;
 }
 
 .message-time {
     color: #8a8a8a;
     font-size: 12px;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 .message-content {
@@ -340,10 +434,6 @@ button:active {
         height: auto;
         min-height: 400px;
     }
-
-    .chat-box {
-        height: 100%;
-    }
 }
 
 @media (max-width: 768px) {
@@ -366,227 +456,4 @@ button:active {
         width: 100%;
         justify-content: center;
     }
-}
-
-#combined-chat .chat-header {
-    background: linear-gradient(90deg, #9146ff, #ff0000);
-    color: white;
-    border-bottom-color: #333;
-}
-
-.chat-container {
-    display: block;
-    height: 80vh;
-    min-height: 600px;
-}
-
-.twitch-message {
-    border-left-color: #9146ff;
-    background: linear-gradient(135deg, rgba(145, 70, 255, 0.1), #252529);
-}
-
-.youtube-message {
-    border-left-color: #ff0000;
-    background: linear-gradient(135deg, rgba(255, 0, 0, 0.1), #252529);
-}
-
-.platform-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 8px;
-}
-
-.twitch-indicator {
-    background: #9146ff;
-    box-shadow: 0 0 5px #9146ff;
-}
-
-.youtube-indicator {
-    background: #ff0000;
-    box-shadow: 0 0 5px #ff0000;
-}
-
-.message-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-
-.badge {
-    display: inline-block;
-    margin-right: 3px;
-    font-size: 0.9em;
-    vertical-align: middle;
-}
-
-.badge.broadcaster {
-    color: #9146FF;
-    background: rgba(145, 70, 255, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-.badge.mod {
-    color: #00AD03;
-    background: rgba(0, 173, 3, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-.badge.vip {
-    color: #FFD700;
-    background: rgba(255, 215, 0, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-.badge.subscriber {
-    color: #BF94FF;
-    background: rgba(191, 148, 255, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-/* Para badges com imagens */
-/* Estilos para badges de imagem */
-.badge-icon {
-    width: 18px;
-    height: 18px;
-    vertical-align: middle;
-    margin-right: 3px;
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-}
-
-/* Fallback para badges emoji */
-.badge {
-    display: inline-block;
-    margin-right: 3px;
-    font-size: 0.9em;
-    vertical-align: middle;
-}
-
-/* Ajuste no layout das mensagens */
-.message-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 2px;
-}
-
-.message-user {
-    display: flex;
-    align-items: center;
-    flex-grow: 1;
-}
-
-.username {
-    margin-right: 5px;
-}
-
-.message-time {
-    color: #888;
-    font-size: 0.8em;
-    white-space: nowrap;
-}
-
-/* Estilos para badges da Twitch */
-.badge-icon {
-    width: 18px;
-    height: 18px;
-    vertical-align: middle;
-    margin-right: 4px;
-    margin-bottom: 2px;
-    display: inline-block;
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-    border-radius: 2px;
-}
-
-.message-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 3px;
-    min-height: 22px;
-}
-
-.message-user {
-    display: flex;
-    align-items: center;
-    flex-grow: 1;
-    flex-wrap: wrap;
-    gap: 3px;
-}
-
-.username {
-    font-weight: 600;
-    margin-right: 5px;
-}
-
-.twitch-message {
-    background: rgba(145, 70, 255, 0.05);
-    border-left: 3px solid #9146FF;
-}
-
-.twitch-message .username {
-    color: #9146FF;
-}
-
-/* Badges específicas */
-[title="broadcaster"] {
-    box-shadow: 0 0 3px rgba(145, 70, 255, 0.5);
-}
-
-[title="moderator"] {
-    box-shadow: 0 0 3px rgba(0, 173, 3, 0.5);
-}
-
-[title="subscriber"] {
-    box-shadow: 0 0 3px rgba(191, 148, 255, 0.5);
-}
-
-/* Estilos para badges */
-.badge {
-    display: inline-block;
-    margin-right: 3px;
-    font-size: 0.9em;
-    vertical-align: middle;
-}
-
-.badge.broadcaster {
-    color: #9146FF;
-    background: rgba(145, 70, 255, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-.badge.mod {
-    color: #00AD03;
-    background: rgba(0, 173, 3, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-.badge.vip {
-    color: #FFD700;
-    background: rgba(255, 215, 0, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-.badge.subscriber {
-    color: #BF94FF;
-    background: rgba(191, 148, 255, 0.1);
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-
-/* Para badges com imagens */
-.badge-icon {
-    width: 18px;
-    height: 18px;
-    vertical-align: middle;
-    margin-right: 3px;
 }
