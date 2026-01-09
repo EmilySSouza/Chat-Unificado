@@ -518,3 +518,38 @@ button:active {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
 }
+
+/* CSS para os badges (estilo anterior) */
+
+.badge {
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.badge.broadcaster {
+    color: #9146FF;
+    font-weight: bold;
+}
+
+.badge.mod {
+    color: #00AD03;
+}
+
+.badge.vip {
+    color: #FFD700;
+}
+
+.badge.subscriber {
+    color: #BF94FF;
+}
+
+.badge.owner {
+    color: #FF0000;
+    font-weight: bold;
+}
+
+.badge.verified {
+    color: #1DA1F2;
+    font-weight: bold;
+}
