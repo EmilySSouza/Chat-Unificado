@@ -11,3 +11,6 @@ services:
         value: funilzinha
       - key: YOUTUBE_CHANNEL_ID
         value: UC5ooSCrMhz10WUWrc6IlT3Q
+    autoDeploy: true
+    healthCheckPath: /health
+    initialDelay: 60

@@ -180,7 +180,7 @@ function connectToServer() {
 
     eventSource.onopen = () => {
         reconnectAttempts = 0;
-        addMessage('system', 'Sistema', 'Servidor conectado');
+        addMessage('system', 'Sistema', '✅ Servidor conectado. Buscando live do YouTube...');
     };
 
     eventSource.onmessage = (event) => {
