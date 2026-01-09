@@ -451,9 +451,43 @@ button:active {
 }
 
 /* Para badges com imagens */
+/* Estilos para badges de imagem */
 .badge-icon {
     width: 18px;
     height: 18px;
     vertical-align: middle;
     margin-right: 3px;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+}
+
+/* Fallback para badges emoji */
+.badge {
+    display: inline-block;
+    margin-right: 3px;
+    font-size: 0.9em;
+    vertical-align: middle;
+}
+
+/* Ajuste no layout das mensagens */
+.message-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.message-user {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.username {
+    margin-right: 5px;
+}
+
+.message-time {
+    color: #888;
+    font-size: 0.8em;
+    white-space: nowrap;
 }
