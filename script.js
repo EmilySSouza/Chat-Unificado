@@ -145,60 +145,67 @@ function escapeHtml(text) {
 
 function addMessage(platform, user, text, badges = {}) {
     const container = document.getElementById('combined-messages');
-    if (!container) {
-        console.error('❌ Container não encontrado!');
-        return;
-    }
+    if (!container) return;
 
     // Limita mensagens
     if (container.children.length >= 200) {
         container.removeChild(container.firstChild);
     }
 
-    // Cria badges HTML
     let badgesHtml = '';
 
     if (platform === 'twitch') {
-        // Processa badges da Twitch com imagens
+        console.log(`🎯 Renderizando: ${user} com badges:`, badges.badgeList);
+
+        // MÉTODO 1: Usar URLs diretas (mais confiável)
         if (badges.badgeList && badges.badgeList.length > 0) {
             badges.badgeList.forEach(badge => {
                 const [setId, version] = badge.split('/');
-                let badgeData = null;
+                console.log(`   Badge: ${setId}/${version}`);
 
-                // Procura na ordem: canal → global
-                if (twitchBadgesCache.channel[setId]?.[version]) {
-                    badgeData = twitchBadgesCache.channel[setId][version];
-                } else if (twitchBadgesCache.global[setId]?.[version]) {
-                    badgeData = twitchBadgesCache.global[setId][version];
-                }
+                // URLs diretas das badges da Twitch
+                const badgeUrls = {
+                    'broadcaster': `https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/${version}/1`,
+                    'moderator': `https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/${version}/1`,
+                    'vip': `https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/${version}/1`,
+                    'subscriber': `https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${version}/1`,
+                    'founder': `https://static-cdn.jtvnw.net/badges/v1/511b78a9-ab37-472f-9569-457753bbe7d4/${version}/1`,
+                    'premium': `https://static-cdn.jtvnw.net/badges/v1/bbbe0db0-a598-423e-86d0-f9fb98ca1933/${version}/1`
+                };
 
-                if (badgeData && badgeData.url_1x) {
-                    badgesHtml += `<img src="${badgeData.url_1x}" 
-                                   srcset="${badgeData.url_1x} 1x, ${badgeData.url_2x} 2x"
-                                   class="badge-icon" 
-                                   title="${badgeData.title || setId}"
-                                   alt="${setId} badge">`;
+                if (badgeUrls[setId]) {
+                    badgesHtml += `<img src="${badgeUrls[setId]}" 
+                                      class="badge-icon" 
+                                      title="${setId}"
+                                      alt="${setId}">`;
+                } else if (setId.startsWith('subscriber')) {
+                    // Para subscribers com meses específicos
+                    badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${version}/1" 
+                                      class="badge-icon" 
+                                      title="Subscriber"
+                                      alt="subscriber">`;
                 } else {
-                    // Fallback para emojis
-                    badgesHtml += getFallbackBadge(setId);
+                    console.log(`   ❌ Badge não mapeada: ${setId}`);
                 }
             });
-        } else {
-            // Se não tem badges na lista, verifica status especial
+        }
+
+        // MÉTODO 2: Fallback para status direto
+        if (!badgesHtml) {
             if (badges.isBroadcaster) {
-                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/1" 
-                               class="badge-icon" title="Broadcaster">`;
-            } else if (badges.isModerator) {
-                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/1" 
-                               class="badge-icon" title="Moderator">`;
+                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/1/1" 
+                                  class="badge-icon" title="Broadcaster">`;
+            }
+            if (badges.isModerator) {
+                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/1/1" 
+                                  class="badge-icon" title="Moderator">`;
             }
         }
 
+        console.log(`   ✅ HTML gerado: ${badgesHtml ? 'Sim' : 'Não'}`);
+
     } else if (platform === 'youtube') {
-        // Seu código atual do YouTube
-        if (badges.isOwner) badgesHtml += '<span class="badge owner">👑</span>';
-        if (badges.isModerator) badgesHtml += '<span class="badge mod">🛡️</span>';
-        if (badges.isMember) badgesHtml += '<span class="badge member">⭐</span>';
+        // Código do YouTube...
     }
 
     const msgEl = document.createElement('div');
@@ -342,72 +349,80 @@ async function connectTwitch() {
 
     twitchSocket.onmessage = (event) => {
         const msg = event.data;
-        console.log('📨 Raw Twitch:', msg); // DEBUG
 
-        // Responde a PING
         if (msg.includes('PING')) {
             twitchSocket.send('PONG :tmi.twitch.tv');
-            console.log('🔄 PING/PONG Twitch');
             return;
         }
 
-        // Processa mensagens do chat
+        // Log para debug (remova depois de testar)
+        console.log('📨 RAW:', msg);
+
         if (msg.includes('PRIVMSG')) {
             try {
-                // Parse das tags IRC
-                const parts = msg.split(';');
-                const tags = {};
+                // CORREÇÃO: Parse correto das tags IRC
+                let tags = {};
+                let messageText = '';
+                let displayName = '';
 
-                parts.forEach(part => {
-                    const [key, ...value] = part.split('=');
-                    if (key && key.trim()) {
-                        tags[key.trim()] = value.join('=');
+                // As tags começam com @ e terminam antes do primeiro espaço
+                if (msg.startsWith('@')) {
+                    const firstSpace = msg.indexOf(' ');
+                    const tagsPart = msg.substring(1, firstSpace);
+
+                    // Parse das tags
+                    tagsPart.split(';').forEach(tag => {
+                        const [key, ...valueParts] = tag.split('=');
+                        if (key) {
+                            tags[key] = valueParts.join('=');
+                        }
+                    });
+
+                    // Extrai o resto da mensagem
+                    const remaining = msg.substring(firstSpace + 1);
+
+                    // Parse do formato: "username!username@username.tmi.twitch.tv PRIVMSG #canal :mensagem"
+                    const privmsgMatch = remaining.match(/:(.*)!(.*)@(.*) PRIVMSG #(.*) :(.*)/);
+                    if (privmsgMatch) {
+                        displayName = tags['display-name'] || privmsgMatch[1];
+                        messageText = privmsgMatch[5];
                     }
-                });
+                }
 
-                // Extrai username e mensagem
-                const match = msg.match(/:(.*)!(.*) PRIVMSG #(.*) :(.*)/);
-                if (match) {
-                    const username = tags['display-name'] || match[1];
-                    const message = match[4];
+                // DEBUG: Mostra todas as tags
+                console.log('🔍 Tags encontradas:', tags);
+                console.log('👤 Usuário:', displayName);
+                console.log('📝 Mensagem:', messageText);
+                console.log('🏷️ Badges string:', tags.badges);
 
-                    // DEBUG: Mostra todas as tags
-                    console.log('🏷️ Tags:', tags);
-
-                    // Prepara dados da mensagem
+                if (displayName && messageText) {
+                    // Prepara dados para addMessage
+                    const badgeList = tags.badges ? tags.badges.split(',') : [];
                     const messageData = {
-                        badgeList: tags.badges ? tags.badges.split(',') : [],
-                        isBroadcaster: tags['user-id'] === tags['room-id'],
-                        isModerator: tags.mod === '1',
-                        isSubscriber: tags.subscriber === '1',
+                        badgeList: badgeList,
                         color: tags.color || '#FFFFFF',
+                        isBroadcaster: badgeList.includes('broadcaster'),
+                        isModerator: badgeList.includes('moderator') || tags.mod === '1',
+                        isSubscriber: tags.subscriber === '1',
                         userId: tags['user-id'],
-                        roomId: tags['room-id']
+                        badges: tags.badges || ''
                     };
 
-                    console.log(`💬 Twitch: ${username} (badges: ${messageData.badgeList.length})`);
+                    console.log(`✅ Processado: ${displayName} com ${badgeList.length} badges`);
 
                     // Adiciona mensagem ao chat
-                    addMessage('twitch', username, message, messageData);
+                    addMessage('twitch', displayName, messageText, messageData);
                 }
+
             } catch (error) {
-                console.error('❌ Erro ao processar mensagem Twitch:', error, 'Mensagem:', msg);
+                console.error('❌ Erro ao processar mensagem:', error);
+                console.log('Mensagem problemática:', msg);
             }
         }
 
-        // Mensagens de sistema
-        if (msg.includes('JOIN')) {
-            console.log('➡️ Usuário entrou no chat');
-        }
-
-        if (msg.includes('PART')) {
-            console.log('⬅️ Usuário saiu do chat');
-        }
-
-        // Confirmação de conexão
-        if (msg.includes('Welcome, GLHF!')) {
-            console.log('🎉 Conectado ao chat da Twitch!');
-            addMessage('system', 'Sistema', `Conectado ao chat de ${CONFIG.twitchChannel}`);
+        // Outros tipos de mensagem
+        else if (msg.includes('USERNOTICE') || msg.includes('CLEARCHAT') || msg.includes('USERSTATE')) {
+            console.log('ℹ️ Outro tipo de mensagem:', msg.substring(0, 100));
         }
     };
 
@@ -503,3 +518,27 @@ setInterval(() => {
         connectTwitch();
     }
 }, 10000);
+
+function testBadgeParsing() {
+    // Simula uma mensagem real da Twitch
+    const testMessage = '@badge-info=;badges=broadcaster/1;color=#FF0000;display-name=MilyMend;emotes=;flags=;id=123;mod=0;room-id=456;subscriber=0;tmi-sent-ts=123456789;turbo=0;user-id=789;user-type= :milymend!milymend@milymend.tmi.twitch.tv PRIVMSG #funilzinha :Testando badges';
+
+    console.log('🧪 Testando parse...');
+
+    // Simula o parsing
+    let tags = {};
+    if (testMessage.startsWith('@')) {
+        const firstSpace = testMessage.indexOf(' ');
+        const tagsPart = testMessage.substring(1, firstSpace);
+
+        tagsPart.split(';').forEach(tag => {
+            const [key, ...valueParts] = tag.split('=');
+            if (key) tags[key] = valueParts.join('=');
+        });
+    }
+
+    console.log('📊 Resultado do teste:');
+    console.log('- Badges:', tags.badges);
+    console.log('- Display Name:', tags['display-name']);
+    console.log('- Badge List:', tags.badges ? tags.badges.split(',') : []);
+}
