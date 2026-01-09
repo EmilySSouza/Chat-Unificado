@@ -1,24 +1,34 @@
-(function() {
-    // Fallback automático para Render
-    if (window.location.hostname.includes('onrender.com') && 
-        typeof CONFIG === 'undefined') {
-        console.log('🌐 Detectado Render, configurando automaticamente...');
-        window.CONFIG = {
-            twitchChannel: "funilzinha",
-            serverUrl: "https://chat-unificado.onrender.com",
-            youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
-        };
-    }
-    
-    // Fallback para desenvolvimento local
-    if (window.location.hostname === 'localhost' && 
-        typeof CONFIG === 'undefined') {
-        console.log('💻 Modo local, configurando...');
-        window.CONFIG = {
-            twitchChannel: "funilzinha",
-            serverUrl: "http://localhost:3000",
-            youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
-        };
+(function () {
+    // Configuração automática baseada na URL atual
+    const isRender = window.location.hostname.includes('onrender.com');
+    const isLocal = window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1';
+
+    if (typeof CONFIG === 'undefined') {
+        console.log('⚙️ Configurando automaticamente...');
+
+        if (isRender) {
+            window.CONFIG = {
+                twitchChannel: "funilzinha",
+                serverUrl: "https://chat-unificado.onrender.com", // SEMPRE HTTPS
+                youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
+            };
+        } else if (isLocal) {
+            window.CONFIG = {
+                twitchChannel: "funilzinha",
+                serverUrl: "http://localhost:3000",
+                youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
+            };
+        } else {
+            // Fallback
+            window.CONFIG = {
+                twitchChannel: "funilzinha",
+                serverUrl: window.location.origin, // Usa origem atual
+                youtubeChannelId: "UC5ooSCrMhz10WUWrc6IlT3Q"
+            };
+        }
+
+        console.log('✅ CONFIG configurada:', window.CONFIG);
     }
 })();
 
@@ -195,36 +205,35 @@ function getFallbackBadge(setId) {
 }
 
 function connectToServer() {
+    console.log('🔗 Conectando ao servidor SSE...');
+    console.log('🔗 URL:', CONFIG.serverUrl);
+
     if (eventSource) {
         eventSource.close();
         eventSource = null;
     }
 
-    eventSource = new EventSource(`${CONFIG.serverUrl}/events`);
+    // USA A URL DO CONFIG (já deve ser HTTPS no Render)
+    const sseUrl = `${CONFIG.serverUrl}/events`;
+    console.log('🎯 SSE URL final:', sseUrl);
+
+    eventSource = new EventSource(sseUrl);
 
     eventSource.onopen = () => {
+        console.log('✅ Conexão SSE aberta');
         reconnectAttempts = 0;
         addMessage('system', 'Sistema', '🔗 Conectado ao servidor...');
     };
 
     eventSource.onmessage = (event) => {
+        console.log('📩 Evento SSE recebido');
+
         try {
             const data = JSON.parse(event.data);
 
-            // IGNORA mensagens de "aguardando" se já viu antes
-            const ignoreMessages = [
-                'Aguardando início da transmissão',
-                'Aguardando transmissão',
-                'Nenhuma transmissão ativa'
-            ];
-
-            const messageText = typeof data.data === 'string' ? data.data : '';
-            if (ignoreMessages.some(msg => messageText.includes(msg))) {
-                return; // Não mostra no chat
-            }
-
             switch (data.type) {
                 case 'youtube':
+                    console.log(`🎥 YouTube: ${data.data.user}`);
                     addMessage(
                         'youtube',
                         data.data.user,
@@ -234,14 +243,13 @@ function connectToServer() {
                     break;
 
                 case 'system':
+                    console.log(`📢 System: ${data.data}`);
                     addMessage('system', 'Sistema', data.data);
                     break;
 
                 case 'welcome':
-                    // Mostra apenas informações importantes
-                    if (data.data.message) {
-                        addMessage('system', 'Sistema', data.data.message);
-                    }
+                    console.log('👋 Welcome:', data.data.message);
+                    addMessage('system', 'Sistema', data.data.message);
                     break;
             }
         } catch (error) {
@@ -250,30 +258,23 @@ function connectToServer() {
     };
 
     eventSource.onerror = (error) => {
-        console.error('❌ Erro na conexão:', error);
+        console.error('❌ Erro SSE:', error);
+
         if (eventSource) {
             eventSource.close();
+            eventSource = null;
         }
 
         reconnectAttempts++;
         const delay = Math.min(5000, reconnectAttempts * 1000);
+        console.log(`🔄 Reconectando em ${delay}ms...`);
 
         setTimeout(connectToServer, delay);
     };
 }
 
 async function connectTwitch() {
-
-    await fetchGlobalBadges();
-
-    try {
-        const channelId = await getChannelId(CONFIG.twitchChannel);
-        if (channelId) {
-            await fetchChannelBadges(channelId);
-        }
-    } catch (error) {
-        console.log('⚠️ Usando apenas badges globais:', error.message);
-    }
+    console.log('🎮 Conectando ao Twitch...');
 
     if (twitchSocket && twitchSocket.readyState === WebSocket.OPEN) {
         twitchSocket.close();
@@ -282,14 +283,13 @@ async function connectTwitch() {
     twitchSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
     twitchSocket.onopen = () => {
+        console.log('✅ Twitch WebSocket aberto');
 
         twitchSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-
         twitchSocket.send(`NICK justinfan${Math.floor(Math.random() * 10000)}`);
-
         twitchSocket.send(`JOIN #${CONFIG.twitchChannel.toLowerCase()}`);
 
-        addMessage('system', 'Sistema', 'Twitch conectado com badges');
+        addMessage('system', 'Sistema', '✅ Twitch conectado');
     };
 
     twitchSocket.onmessage = (event) => {
@@ -314,61 +314,44 @@ async function connectTwitch() {
                     const username = tags['display-name'] || match[1];
                     const message = match[4];
 
-                    const twitchBadges = {};
-                    if (tags.badges) {
-                        const badgesList = tags.badges.split(',');
-                        badgesList.forEach(badge => {
-                            const [name, version] = badge.split('/');
-                            twitchBadges[name] = version;
-                        });
-                    }
-
+                    // Badges simplificadas (sem API)
                     const userBadges = {
-                        isBroadcaster: tags['badges']?.includes('broadcaster') || tags['user-id'] === tags['room-id'],
+                        isBroadcaster: tags['badges']?.includes('broadcaster'),
                         isModerator: tags.mod === '1' || tags['badges']?.includes('moderator'),
                         isVIP: tags['badges']?.includes('vip'),
                         isSubscriber: tags.subscriber === '1',
-                        isFounder: tags['badges']?.includes('founder'),
-                        badgeInfo: tags['badge-info']
+                        isFounder: tags['badges']?.includes('founder')
                     };
 
+                    console.log(`🎮 Twitch: ${username}: ${message.substring(0, 50)}...`);
                     addMessage('twitch', username, message, userBadges);
                 }
             } catch (error) {
-                console.log('Erro Twitch:', error);
+                console.log('⚠️ Erro Twitch:', error);
             }
         }
     };
 
-    twitchSocket.onclose = (event) => {
-        if (event.code !== 1000) {
-            const delay = Math.min(30000, reconnectAttempts * 5000);
-
-            setTimeout(() => {
-                reconnectAttempts++;
-                connectTwitch();
-            }, delay);
-        }
-    };
-
     twitchSocket.onerror = (error) => {
-        console.error('❌ Erro WebSocket Twitch:', error);
+        console.error('❌ Erro Twitch WebSocket:', error);
 
         if (twitchSocket.readyState === WebSocket.CLOSED) {
             setTimeout(connectTwitch, 2000);
         }
     };
 
-    const checkConnection = setInterval(() => {
+    // Keep alive
+    const pingInterval = setInterval(() => {
         if (twitchSocket && twitchSocket.readyState === WebSocket.OPEN) {
             twitchSocket.send('PING :keepalive');
         }
     }, 30000);
 
     twitchSocket.addEventListener('close', () => {
-        clearInterval(checkConnection);
+        clearInterval(pingInterval);
     });
-};
+}
+
 
 window.testServer = async function () {
     try {
@@ -390,6 +373,10 @@ window.clearChat = function () {
 };
 
 window.onload = function () {
+    console.log('🚀 Página carregada');
+    console.log('⚙️ CONFIG:', CONFIG);
+    console.log('🌐 URL atual:', window.location.href);
+
     addMessage('system', 'Sistema', '💬 Chat OBS iniciado');
     addMessage('system', 'Sistema', `📺 Twitch: ${CONFIG.twitchChannel}`);
     addMessage('system', 'Sistema', '🎥 YouTube: Conectando...');
