@@ -546,3 +546,47 @@ button:active {
 [title="subscriber"] {
     box-shadow: 0 0 3px rgba(191, 148, 255, 0.5);
 }
+
+/* Estilos para badges */
+.badge {
+    display: inline-block;
+    margin-right: 3px;
+    font-size: 0.9em;
+    vertical-align: middle;
+}
+
+.badge.broadcaster {
+    color: #9146FF;
+    background: rgba(145, 70, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.mod {
+    color: #00AD03;
+    background: rgba(0, 173, 3, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.vip {
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.badge.subscriber {
+    color: #BF94FF;
+    background: rgba(191, 148, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+/* Para badges com imagens */
+.badge-icon {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+    margin-right: 3px;
+}

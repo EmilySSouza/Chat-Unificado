@@ -147,75 +147,38 @@ function addMessage(platform, user, text, badges = {}) {
     const container = document.getElementById('combined-messages');
     if (!container) return;
 
-    // Limita mensagens
+    // Limita mensagens (código existente)
     if (container.children.length >= 200) {
         container.removeChild(container.firstChild);
     }
 
+    // Cria badges HTML com base na plataforma
     let badgesHtml = '';
 
     if (platform === 'twitch') {
-        console.log(`🎯 Renderizando: ${user} com badges:`, badges.badgeList);
-
-        // MÉTODO 1: Usar URLs diretas (mais confiável)
-        if (badges.badgeList && badges.badgeList.length > 0) {
-            badges.badgeList.forEach(badge => {
-                const [setId, version] = badge.split('/');
-                console.log(`   Badge: ${setId}/${version}`);
-
-                // URLs diretas das badges da Twitch
-                const badgeUrls = {
-                    'broadcaster': `https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/${version}/1`,
-                    'moderator': `https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/${version}/1`,
-                    'vip': `https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/${version}/1`,
-                    'subscriber': `https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${version}/1`,
-                    'founder': `https://static-cdn.jtvnw.net/badges/v1/511b78a9-ab37-472f-9569-457753bbe7d4/${version}/1`,
-                    'premium': `https://static-cdn.jtvnw.net/badges/v1/bbbe0db0-a598-423e-86d0-f9fb98ca1933/${version}/1`
-                };
-
-                if (badgeUrls[setId]) {
-                    badgesHtml += `<img src="${badgeUrls[setId]}" 
-                                      class="badge-icon" 
-                                      title="${setId}"
-                                      alt="${setId}">`;
-                } else if (setId.startsWith('subscriber')) {
-                    // Para subscribers com meses específicos
-                    badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${version}/1" 
-                                      class="badge-icon" 
-                                      title="Subscriber"
-                                      alt="subscriber">`;
-                } else {
-                    console.log(`   ❌ Badge não mapeada: ${setId}`);
-                }
-            });
+        // Badges específicas da Twitch
+        if (badges.isBroadcaster) badgesHtml += '<span class="badge broadcaster" title="Broadcaster">👑</span>';
+        if (badges.isModerator) badgesHtml += '<span class="badge mod" title="Moderator">🛡️</span>';
+        if (badges.isVIP) badgesHtml += '<span class="badge vip" title="VIP">⭐</span>';
+        if (badges.isSubscriber || badges.isFounder) {
+            badgesHtml += '<span class="badge subscriber" title="Subscriber">💜</span>';
         }
 
-        // MÉTODO 2: Fallback para status direto
-        if (!badgesHtml) {
-            if (badges.isBroadcaster) {
-                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1/1/1" 
-                                  class="badge-icon" title="Broadcaster">`;
-            }
-            if (badges.isModerator) {
-                badgesHtml += `<img src="https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0/1/1" 
-                                  class="badge-icon" title="Moderator">`;
-            }
-        }
-
-        console.log(`   ✅ HTML gerado: ${badgesHtml ? 'Sim' : 'Não'}`);
+        // Se quiser usar imagens oficiais:
+        // badgesHtml += '<img src="https://static-cdn.jtvnw.net/badges/v1/.../1.0" class="badge-icon">';
 
     } else if (platform === 'youtube') {
-        // Código do YouTube...
+        // Seu código atual do YouTube
+        if (badges.isOwner) badgesHtml += '<span class="badge owner">👑</span>';
+        if (badges.isModerator) badgesHtml += '<span class="badge mod">🛡️</span>';
+        if (badges.isMember) badgesHtml += '<span class="badge member">⭐</span>';
     }
 
     const msgEl = document.createElement('div');
     msgEl.className = `message ${platform}-message`;
     msgEl.innerHTML = `
         <div class="message-header">
-            <span class="message-user" style="${badges.color ? `color: ${badges.color}` : ''}">
-                ${badgesHtml}
-                <span class="username">${user}</span>
-            </span>
+            <span class="message-user">${user} ${badgesHtml}</span>
             <span class="message-time">${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
         <div class="message-content">${escapeHtml(text)}</div>
@@ -355,74 +318,47 @@ async function connectTwitch() {
             return;
         }
 
-        // Log para debug (remova depois de testar)
-        console.log('📨 RAW:', msg);
-
         if (msg.includes('PRIVMSG')) {
             try {
-                // CORREÇÃO: Parse correto das tags IRC
-                let tags = {};
-                let messageText = '';
-                let displayName = '';
+                // Processa tags IRC (elas vêm no início da mensagem)
+                const parts = msg.split(';');
+                const tags = {};
+                parts.forEach(part => {
+                    const [key, ...value] = part.split('=');
+                    if (key) tags[key] = value.join('=');
+                });
 
-                // As tags começam com @ e terminam antes do primeiro espaço
-                if (msg.startsWith('@')) {
-                    const firstSpace = msg.indexOf(' ');
-                    const tagsPart = msg.substring(1, firstSpace);
+                // Extrai username e mensagem
+                const match = msg.match(/:(.*)!(.*) PRIVMSG #(.*) :(.*)/);
+                if (match) {
+                    const username = tags['display-name'] || match[1];
+                    const message = match[4];
 
-                    // Parse das tags
-                    tagsPart.split(';').forEach(tag => {
-                        const [key, ...valueParts] = tag.split('=');
-                        if (key) {
-                            tags[key] = valueParts.join('=');
-                        }
-                    });
-
-                    // Extrai o resto da mensagem
-                    const remaining = msg.substring(firstSpace + 1);
-
-                    // Parse do formato: "username!username@username.tmi.twitch.tv PRIVMSG #canal :mensagem"
-                    const privmsgMatch = remaining.match(/:(.*)!(.*)@(.*) PRIVMSG #(.*) :(.*)/);
-                    if (privmsgMatch) {
-                        displayName = tags['display-name'] || privmsgMatch[1];
-                        messageText = privmsgMatch[5];
+                    // Processa badges da Twitch
+                    const twitchBadges = {};
+                    if (tags.badges) {
+                        const badgesList = tags.badges.split(',');
+                        badgesList.forEach(badge => {
+                            const [name, version] = badge.split('/');
+                            twitchBadges[name] = version;
+                        });
                     }
-                }
 
-                // DEBUG: Mostra todas as tags
-                console.log('🔍 Tags encontradas:', tags);
-                console.log('👤 Usuário:', displayName);
-                console.log('📝 Mensagem:', messageText);
-                console.log('🏷️ Badges string:', tags.badges);
-
-                if (displayName && messageText) {
-                    // Prepara dados para addMessage
-                    const badgeList = tags.badges ? tags.badges.split(',') : [];
-                    const messageData = {
-                        badgeList: badgeList,
-                        color: tags.color || '#FFFFFF',
-                        isBroadcaster: badgeList.includes('broadcaster'),
-                        isModerator: badgeList.includes('moderator') || tags.mod === '1',
+                    // Determina tipo de usuário
+                    const userBadges = {
+                        isBroadcaster: tags['badges']?.includes('broadcaster') || tags['user-id'] === tags['room-id'],
+                        isModerator: tags.mod === '1' || tags['badges']?.includes('moderator'),
+                        isVIP: tags['badges']?.includes('vip'),
                         isSubscriber: tags.subscriber === '1',
-                        userId: tags['user-id'],
-                        badges: tags.badges || ''
+                        isFounder: tags['badges']?.includes('founder'),
+                        badgeInfo: tags['badge-info'] // Tempo de sub
                     };
 
-                    console.log(`✅ Processado: ${displayName} com ${badgeList.length} badges`);
-
-                    // Adiciona mensagem ao chat
-                    addMessage('twitch', displayName, messageText, messageData);
+                    addMessage('twitch', username, message, userBadges);
                 }
-
             } catch (error) {
-                console.error('❌ Erro ao processar mensagem:', error);
-                console.log('Mensagem problemática:', msg);
+                console.log('Erro Twitch:', error);
             }
-        }
-
-        // Outros tipos de mensagem
-        else if (msg.includes('USERNOTICE') || msg.includes('CLEARCHAT') || msg.includes('USERSTATE')) {
-            console.log('ℹ️ Outro tipo de mensagem:', msg.substring(0, 100));
         }
     };
 
