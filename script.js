@@ -1,4 +1,4 @@
-let eventSource = null; 
+let eventSource = null;
 let twitchSocket = null;
 let reconnectAttempts = 0;
 let twitchBadgesCache = {
@@ -180,12 +180,24 @@ function connectToServer() {
 
     eventSource.onopen = () => {
         reconnectAttempts = 0;
-        addMessage('system', 'Sistema', '✅ Servidor conectado. Buscando live do YouTube...');
+        addMessage('system', 'Sistema', '🔗 Conectado ao servidor...');
     };
 
     eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
+
+            // IGNORA mensagens de "aguardando" se já viu antes
+            const ignoreMessages = [
+                'Aguardando início da transmissão',
+                'Aguardando transmissão',
+                'Nenhuma transmissão ativa'
+            ];
+
+            const messageText = typeof data.data === 'string' ? data.data : '';
+            if (ignoreMessages.some(msg => messageText.includes(msg))) {
+                return; // Não mostra no chat
+            }
 
             switch (data.type) {
                 case 'youtube':
@@ -202,6 +214,10 @@ function connectToServer() {
                     break;
 
                 case 'welcome':
+                    // Mostra apenas informações importantes
+                    if (data.data.message) {
+                        addMessage('system', 'Sistema', data.data.message);
+                    }
                     break;
             }
         } catch (error) {
