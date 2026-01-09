@@ -1,14 +1,11 @@
 <!DOCTYPE html>
 <html lang="pt-br">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Twitch & YouTube</title>
+    <title>Chat Twitch & YouTube - OBS</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 </head>
-
 <body>
     <div class="container">
         <div class="header">
@@ -16,13 +13,27 @@
         </div>
         <div class="chat-container">
             <div class="chat-box" id="combined-chat">
-                <div class="messages" id="combined-messages"></div>
+                <div class="messages" id="messages"></div> <!-- AQUI MUDOU! -->
             </div>
+        </div>
+    </div>
+
+    <div class="status-bar"> <!-- ADICIONE ESTA BARRA DE STATUS -->
+        <div class="status-item">
+            <span id="ws-status" class="status-dot disconnected"></span>
+            <span id="ws-text">Desconectado</span>
+        </div>
+        <div class="status-item">
+            <span id="youtube-status" class="status-dot disconnected"></span>
+            <span>YouTube</span>
+        </div>
+        <div class="status-item">
+            <span id="twitch-status" class="status-dot disconnected"></span>
+            <span>Twitch</span>
         </div>
     </div>
 
     <script src="config.js"></script>
     <script src="script.js"></script>
 </body>
-
 </html>

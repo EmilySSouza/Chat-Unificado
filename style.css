@@ -457,3 +457,64 @@ button:active {
         justify-content: center;
     }
 }
+
+/* ADICIONE NO FINAL DO SEU style.css */
+
+/* Status bar */
+.status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 8px 15px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 1000;
+    backdrop-filter: blur(5px);
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.connected { 
+    background: #00ff00; 
+    box-shadow: 0 0 8px #00ff00;
+}
+
+.disconnected { 
+    background: #ff0000; 
+}
+
+.connecting { 
+    background: #ffff00; 
+    animation: pulse 1s infinite;
+    box-shadow: 0 0 8px #ffff00;
+}
+
+#ws-text {
+    font-weight: bold;
+}
+
+/* Ajuste para o container de mensagens não ser coberto pela status bar */
+.chat-container {
+    padding-bottom: 40px; /* Espaço para a status bar */
+}
+
+/* Animação para os pontos de status */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
